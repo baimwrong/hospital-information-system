@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class MedicalRecord extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'encounter_number',
@@ -63,8 +64,18 @@ class MedicalRecord extends Model
     public static function generateNumber(): string
     {
         $year = date('Y');
-        $count = static::whereYear('created_at', $year)->count() + 1;
+        $prefix = "ENC-{$year}-";
 
-        return sprintf('ENC-%s-%04d', $year, $count);
+        $last = static::withTrashed()
+            ->where('encounter_number', 'like', "{$prefix}%")
+            ->orderByRaw('LENGTH(encounter_number) DESC, encounter_number DESC')
+            ->value('encounter_number');
+
+        $nextSeq = 1;
+        if ($last && preg_match('/ENC-\d{4}-(\d+)/', $last, $matches)) {
+            $nextSeq = ((int) $matches[1]) + 1;
+        }
+
+        return sprintf('ENC-%s-%04d', $year, $nextSeq);
     }
 }

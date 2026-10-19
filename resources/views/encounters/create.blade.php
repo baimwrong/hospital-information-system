@@ -76,49 +76,41 @@
                         </div>
                     </div>
 
-                    <h6 class="fw-bold text-primary mb-3"><i class="bi bi-capsule me-1"></i> Electronic Prescription (Direct Formulary Order)</h6>
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <h6 class="fw-bold text-primary mb-0"><i class="bi bi-capsule me-1"></i> Electronic Prescription (Direct Formulary Order)</h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="addMedBtn">
+                            <i class="bi bi-plus-circle me-1"></i> Add Medication
+                        </button>
+                    </div>
                     <div class="p-3 bg-light rounded border mb-4">
-                        <div class="row g-2 mb-2">
-                            <div class="col-md-5">
-                                <label class="form-label small fw-semibold">Select Drug</label>
-                                <select name="medicines[0][id]" class="form-select form-select-sm">
-                                    <option value="">-- Choose Medication --</option>
-                                    @foreach($medicines as $med)
-                                        <option value="{{ $med->id }}">{{ $med->brand_name }} ({{ $med->strength }}) - Stock: {{ $med->stock_quantity }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label small fw-semibold">Dosage</label>
-                                <input type="text" name="medicines[0][dosage]" class="form-control form-control-sm" placeholder="1 tab daily">
-                            </div>
-                            <div class="col-md-2">
-                                <label class="form-label small fw-semibold">Quantity</label>
-                                <input type="number" name="medicines[0][quantity]" class="form-control form-control-sm" placeholder="30">
-                            </div>
-                            <div class="col-md-2">
-                                <label class="form-label small fw-semibold">Instructions</label>
-                                <input type="text" name="medicines[0][instructions]" class="form-control form-control-sm" placeholder="After meals">
-                            </div>
-                        </div>
-
-                        <div class="row g-2">
-                            <div class="col-md-5">
-                                <select name="medicines[1][id]" class="form-select form-select-sm">
-                                    <option value="">-- Choose Medication (Optional 2nd) --</option>
-                                    @foreach($medicines as $med)
-                                        <option value="{{ $med->id }}">{{ $med->brand_name }} ({{ $med->strength }}) - Stock: {{ $med->stock_quantity }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <input type="text" name="medicines[1][dosage]" class="form-control form-control-sm" placeholder="Dosage">
-                            </div>
-                            <div class="col-md-2">
-                                <input type="number" name="medicines[1][quantity]" class="form-control form-control-sm" placeholder="Qty">
-                            </div>
-                            <div class="col-md-2">
-                                <input type="text" name="medicines[1][instructions]" class="form-control form-control-sm" placeholder="Instructions">
+                        <div id="medicinesContainer">
+                            <div class="row g-2 mb-2 med-row align-items-center">
+                                <div class="col-md-5">
+                                    <label class="form-label small fw-semibold">Select Drug</label>
+                                    <select name="medicines[0][id]" class="form-select form-select-sm">
+                                        <option value="">-- Choose Medication --</option>
+                                        @foreach($medicines as $med)
+                                            <option value="{{ $med->id }}">{{ $med->brand_name }} ({{ $med->strength }}) - Stock: {{ $med->stock_quantity }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-semibold">Dosage</label>
+                                    <input type="text" name="medicines[0][dosage]" class="form-control form-control-sm" placeholder="1 tab daily">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small fw-semibold">Quantity</label>
+                                    <input type="number" name="medicines[0][quantity]" class="form-control form-control-sm" placeholder="30">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small fw-semibold">Instructions</label>
+                                    <div class="d-flex gap-1">
+                                        <input type="text" name="medicines[0][instructions]" class="form-control form-control-sm" placeholder="After meals">
+                                        <button type="button" class="btn btn-sm btn-outline-danger remove-med-btn" title="Remove Drug" disabled>
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -251,3 +243,71 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    let medIndex = 1;
+    const container = document.getElementById('medicinesContainer');
+    const addMedBtn = document.getElementById('addMedBtn');
+
+    if (!container || !addMedBtn) return;
+
+    // Grab medicines select options from the initial row
+    const initialSelect = container.querySelector('select');
+    const optionsHtml = initialSelect ? initialSelect.innerHTML : '';
+
+    function updateRemoveButtons() {
+        const rows = container.querySelectorAll('.med-row');
+        rows.forEach(row => {
+            const btn = row.querySelector('.remove-med-btn');
+            if (btn) {
+                btn.disabled = (rows.length <= 1);
+            }
+        });
+    }
+
+    addMedBtn.addEventListener('click', function () {
+        const newRow = document.createElement('div');
+        newRow.className = 'row g-2 mb-2 med-row align-items-center';
+        newRow.innerHTML = `
+            <div class="col-md-5">
+                <select name="medicines[${medIndex}][id]" class="form-select form-select-sm">
+                    ${optionsHtml}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <input type="text" name="medicines[${medIndex}][dosage]" class="form-control form-control-sm" placeholder="Dosage">
+            </div>
+            <div class="col-md-2">
+                <input type="number" name="medicines[${medIndex}][quantity]" class="form-control form-control-sm" placeholder="Qty">
+            </div>
+            <div class="col-md-2">
+                <div class="d-flex gap-1">
+                    <input type="text" name="medicines[${medIndex}][instructions]" class="form-control form-control-sm" placeholder="Instructions">
+                    <button type="button" class="btn btn-sm btn-outline-danger remove-med-btn" title="Remove Drug">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.appendChild(newRow);
+        medIndex++;
+        updateRemoveButtons();
+    });
+
+    container.addEventListener('click', function (e) {
+        const btn = e.target.closest('.remove-med-btn');
+        if (btn) {
+            const rows = container.querySelectorAll('.med-row');
+            if (rows.length > 1) {
+                btn.closest('.med-row').remove();
+                updateRemoveButtons();
+            }
+        }
+    });
+
+    updateRemoveButtons();
+});
+</script>
+@endpush

@@ -32,66 +32,145 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     // Patients EMR
-    Route::get('/patients/search/quick', [PatientController::class, 'quickSearch'])->name('patients.quick-search');
-    Route::resource('patients', PatientController::class);
+    Route::get('/patients/search/quick', [PatientController::class, 'quickSearch'])
+        ->middleware('role:admin,receptionist,nurse,doctor,accountant,laboratorist')
+        ->name('patients.quick-search');
+    Route::delete('/patients/{patient}', [PatientController::class, 'destroy'])
+        ->middleware('role:admin')
+        ->name('patients.destroy');
+    Route::resource('patients', PatientController::class)
+        ->middleware('role:admin,receptionist,nurse,doctor')
+        ->except(['destroy']);
 
     // Physicians Directory
-    Route::resource('doctors', DoctorController::class)->except(['destroy']);
+    Route::get('/doctors', [DoctorController::class, 'index'])->name('doctors.index');
+    Route::get('/doctors/{doctor}', [DoctorController::class, 'show'])->name('doctors.show');
+    Route::resource('doctors', DoctorController::class)
+        ->middleware('role:admin')
+        ->only(['create', 'store', 'edit', 'update']);
 
     // Outpatient Appointments
-    Route::resource('appointments', AppointmentController::class)->except(['edit', 'update', 'destroy']);
-    Route::post('/appointments/{appointment}/status', [AppointmentController::class, 'updateStatus'])->name('appointments.update-status');
+    Route::resource('appointments', AppointmentController::class)
+        ->middleware('role:admin,receptionist,nurse,doctor')
+        ->except(['edit', 'update', 'destroy']);
+    Route::post('/appointments/{appointment}/status', [AppointmentController::class, 'updateStatus'])
+        ->middleware('role:admin,receptionist,nurse,doctor')
+        ->name('appointments.update-status');
 
     // Nursing & Triage Vital Signs
-    Route::get('/vitals', [VitalSignController::class, 'index'])->name('vitals.index');
-    Route::get('/vitals/create', [VitalSignController::class, 'create'])->name('vitals.create');
-    Route::post('/vitals', [VitalSignController::class, 'store'])->name('vitals.store');
+    Route::middleware('role:admin,nurse,doctor')->group(function () {
+        Route::get('/vitals', [VitalSignController::class, 'index'])->name('vitals.index');
+        Route::get('/vitals/create', [VitalSignController::class, 'create'])->name('vitals.create');
+        Route::post('/vitals', [VitalSignController::class, 'store'])->name('vitals.store');
+    });
 
     // Clinical Encounters & EMR Consultations
-    Route::resource('encounters', MedicalRecordController::class)->only(['index', 'create', 'store', 'show']);
+    Route::get('/encounters', [MedicalRecordController::class, 'index'])
+        ->middleware('role:admin,doctor,nurse')
+        ->name('encounters.index');
+    Route::get('/encounters/create', [MedicalRecordController::class, 'create'])
+        ->middleware('role:admin,doctor')
+        ->name('encounters.create');
+    Route::post('/encounters', [MedicalRecordController::class, 'store'])
+        ->middleware('role:admin,doctor')
+        ->name('encounters.store');
+    Route::get('/encounters/{encounter}', [MedicalRecordController::class, 'show'])
+        ->middleware('role:admin,doctor,nurse')
+        ->name('encounters.show');
 
     // Inpatient (IPD) Admissions & Bed Management
     Route::prefix('inpatient')->name('inpatient.')->group(function () {
-        Route::get('/', [InpatientController::class, 'index'])->name('index');
-        Route::get('/wards', [InpatientController::class, 'wards'])->name('wards');
-        Route::post('/wards', [InpatientController::class, 'storeWard'])->name('wards.store');
-        Route::get('/admissions/create', [InpatientController::class, 'createAdmission'])->name('admissions.create');
-        Route::post('/admissions', [InpatientController::class, 'storeAdmission'])->name('admissions.store');
-        Route::get('/admissions/{admission}', [InpatientController::class, 'show'])->name('show');
-        Route::post('/admissions/{admission}/discharge', [InpatientController::class, 'discharge'])->name('discharge');
+        Route::get('/', [InpatientController::class, 'index'])
+            ->middleware('role:admin,doctor,nurse,receptionist')
+            ->name('index');
+        Route::get('/wards', [InpatientController::class, 'wards'])
+            ->middleware('role:admin,doctor,nurse,receptionist')
+            ->name('wards');
+        Route::post('/wards', [InpatientController::class, 'storeWard'])
+            ->middleware('role:admin')
+            ->name('wards.store');
+        Route::get('/admissions/create', [InpatientController::class, 'createAdmission'])
+            ->middleware('role:admin,doctor,nurse,receptionist')
+            ->name('admissions.create');
+        Route::post('/admissions', [InpatientController::class, 'storeAdmission'])
+            ->middleware('role:admin,doctor,nurse,receptionist')
+            ->name('admissions.store');
+        Route::get('/admissions/{admission}', [InpatientController::class, 'show'])
+            ->middleware('role:admin,doctor,nurse,receptionist')
+            ->name('show');
+        Route::post('/admissions/{admission}/discharge', [InpatientController::class, 'discharge'])
+            ->middleware('role:admin,doctor,nurse')
+            ->name('discharge');
     });
 
     // Pharmacy & Formulary Inventory
     Route::prefix('pharmacy')->name('pharmacy.')->group(function () {
-        Route::get('/', [PharmacyController::class, 'index'])->name('index');
-        Route::get('/create', [PharmacyController::class, 'create'])->name('create');
-        Route::post('/', [PharmacyController::class, 'store'])->name('store');
-        Route::get('/{medicine}/edit', [PharmacyController::class, 'edit'])->name('edit');
-        Route::put('/{medicine}', [PharmacyController::class, 'update'])->name('update');
-        Route::get('/prescriptions/list', [PharmacyController::class, 'prescriptions'])->name('prescriptions');
-        Route::post('/prescriptions/{prescription}/dispense', [PharmacyController::class, 'dispense'])->name('prescriptions.dispense');
+        Route::get('/', [PharmacyController::class, 'index'])
+            ->middleware('role:admin,pharmacist,doctor,nurse')
+            ->name('index');
+        Route::get('/prescriptions/list', [PharmacyController::class, 'prescriptions'])
+            ->middleware('role:admin,pharmacist,doctor,nurse')
+            ->name('prescriptions');
+        Route::post('/prescriptions/{prescription}/dispense', [PharmacyController::class, 'dispense'])
+            ->middleware('role:admin,pharmacist')
+            ->name('prescriptions.dispense');
+
+        Route::middleware('role:admin,pharmacist')->group(function () {
+            Route::get('/create', [PharmacyController::class, 'create'])->name('create');
+            Route::post('/', [PharmacyController::class, 'store'])->name('store');
+            Route::get('/{medicine}/edit', [PharmacyController::class, 'edit'])->name('edit');
+            Route::put('/{medicine}', [PharmacyController::class, 'update'])->name('update');
+        });
     });
 
     // Laboratory Information System (LIS)
     Route::prefix('laboratory')->name('laboratory.')->group(function () {
-        Route::get('/', [LaboratoryController::class, 'index'])->name('index');
-        Route::get('/requests/create', [LaboratoryController::class, 'createRequest'])->name('requests.create');
-        Route::post('/requests', [LaboratoryController::class, 'storeRequest'])->name('requests.store');
-        Route::get('/requests/{request}', [LaboratoryController::class, 'show'])->name('show');
-        Route::post('/requests/{labRequest}/status', [LaboratoryController::class, 'updateStatus'])->name('requests.update-status');
-        Route::post('/requests/{labRequest}/results', [LaboratoryController::class, 'saveResults'])->name('requests.save-results');
-        Route::get('/test-types', [LaboratoryController::class, 'testTypes'])->name('test-types');
-        Route::post('/test-types', [LaboratoryController::class, 'storeTestType'])->name('test-types.store');
+        Route::get('/', [LaboratoryController::class, 'index'])
+            ->middleware('role:admin,laboratorist,doctor,nurse')
+            ->name('index');
+        Route::get('/requests/create', [LaboratoryController::class, 'createRequest'])
+            ->middleware('role:admin,doctor,nurse')
+            ->name('requests.create');
+        Route::post('/requests', [LaboratoryController::class, 'storeRequest'])
+            ->middleware('role:admin,doctor,nurse')
+            ->name('requests.store');
+        Route::get('/requests/{request}', [LaboratoryController::class, 'show'])
+            ->middleware('role:admin,laboratorist,doctor,nurse')
+            ->name('show');
+        Route::post('/requests/{labRequest}/status', [LaboratoryController::class, 'updateStatus'])
+            ->middleware('role:admin,laboratorist')
+            ->name('requests.update-status');
+        Route::post('/requests/{labRequest}/results', [LaboratoryController::class, 'saveResults'])
+            ->middleware('role:admin,laboratorist')
+            ->name('requests.save-results');
+        Route::get('/test-types', [LaboratoryController::class, 'testTypes'])
+            ->middleware('role:admin,laboratorist,doctor,nurse')
+            ->name('test-types');
+        Route::post('/test-types', [LaboratoryController::class, 'storeTestType'])
+            ->middleware('role:admin,laboratorist')
+            ->name('test-types.store');
     });
 
     // Billing & Revenue Cycle Management
     Route::prefix('billing')->name('billing.')->group(function () {
-        Route::get('/', [BillingController::class, 'index'])->name('index');
-        Route::get('/create', [BillingController::class, 'create'])->name('create');
-        Route::post('/', [BillingController::class, 'store'])->name('store');
-        Route::get('/{invoice}', [BillingController::class, 'show'])->name('show');
-        Route::post('/{invoice}/payment', [BillingController::class, 'recordPayment'])->name('payment');
-        Route::get('/{invoice}/print', [BillingController::class, 'print'])->name('print');
+        Route::get('/', [BillingController::class, 'index'])
+            ->middleware('role:admin,accountant,receptionist')
+            ->name('index');
+        Route::get('/create', [BillingController::class, 'create'])
+            ->middleware('role:admin,accountant')
+            ->name('create');
+        Route::post('/', [BillingController::class, 'store'])
+            ->middleware('role:admin,accountant')
+            ->name('store');
+        Route::get('/{invoice}', [BillingController::class, 'show'])
+            ->middleware('role:admin,accountant,receptionist')
+            ->name('show');
+        Route::post('/{invoice}/payment', [BillingController::class, 'recordPayment'])
+            ->middleware('role:admin,accountant')
+            ->name('payment');
+        Route::get('/{invoice}/print', [BillingController::class, 'print'])
+            ->middleware('role:admin,accountant,receptionist')
+            ->name('print');
     });
 
     // Admin-Only Modules (Role Guarded)

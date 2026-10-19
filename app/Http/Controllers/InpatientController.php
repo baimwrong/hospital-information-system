@@ -112,8 +112,10 @@ class InpatientController extends Controller
         DB::beginTransaction();
 
         try {
-            $bed = Bed::findOrFail($validated['bed_id']);
+            $bed = Bed::where('id', $validated['bed_id'])->lockForUpdate()->firstOrFail();
             if ($bed->status !== 'available') {
+                DB::rollBack();
+
                 return back()->withInput()->withErrors(['bed_id' => 'This bed is currently occupied or under maintenance.']);
             }
 
@@ -154,18 +156,28 @@ class InpatientController extends Controller
         DB::beginTransaction();
 
         try {
-            $admission->discharge_date = now();
-            $admission->status = 'discharged';
-            $admission->discharge_summary = $validated['discharge_summary'];
-            $admission->condition_at_discharge = $validated['condition_at_discharge'];
-            $admission->save();
+            $lockedAdmission = Admission::where('id', $admission->id)->lockForUpdate()->firstOrFail();
+            if ($lockedAdmission->status !== 'admitted') {
+                DB::rollBack();
+
+                return back()->with('warning', 'This patient has already been discharged.');
+            }
+
+            $lockedAdmission->discharge_date = now();
+            $lockedAdmission->status = 'discharged';
+            $lockedAdmission->discharge_summary = $validated['discharge_summary'];
+            $lockedAdmission->condition_at_discharge = $validated['condition_at_discharge'];
+            $lockedAdmission->save();
 
             // Release bed
-            $admission->bed->update(['status' => 'cleaning']);
+            $bed = Bed::where('id', $lockedAdmission->bed_id)->lockForUpdate()->first();
+            if ($bed) {
+                $bed->update(['status' => 'cleaning']);
+            }
 
             // Calculate inpatient bed charges and generate invoice
-            $days = $admission->duration_days;
-            $dailyRate = $admission->bed->effective_rate;
+            $days = $lockedAdmission->duration_days;
+            $dailyRate = $bed ? $bed->effective_rate : 0.00;
             $totalBedCost = $days * $dailyRate;
 
             $invoice = Invoice::create([

@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Models\Department;
 use App\Models\Doctor;
 use App\Models\Patient;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -71,14 +72,46 @@ class AppointmentController extends Controller
             'patient_id' => 'required|exists:patients,id',
             'doctor_id' => 'required|exists:doctors,id',
             'department_id' => 'nullable|exists:departments,id',
-            'appointment_date' => 'required|date',
-            'appointment_time' => 'required',
+            'appointment_date' => 'required|date|after_or_equal:today',
+            'appointment_time' => 'required|date_format:H:i',
             'priority' => 'required|in:routine,urgent,emergency',
             'reason_for_visit' => 'required|string',
             'notes' => 'nullable|string',
         ]);
 
-        $doctor = Doctor::findOrFail($validated['doctor_id']);
+        $doctor = Doctor::with('user')->findOrFail($validated['doctor_id']);
+
+        // Verify physician availability days
+        $dayOfWeek = Carbon::parse($validated['appointment_date'])->format('l');
+        $availableDays = $doctor->available_days ?? [];
+        if (! empty($availableDays) && is_array($availableDays)) {
+            $isAvailable = false;
+            foreach ($availableDays as $d) {
+                if (strcasecmp(trim($d), $dayOfWeek) === 0) {
+                    $isAvailable = true;
+                    break;
+                }
+            }
+            if (! $isAvailable) {
+                return back()->withInput()->withErrors([
+                    'appointment_date' => "Dr. {$doctor->user->name} is not available on {$dayOfWeek}s. Scheduled working days: ".implode(', ', $availableDays).'.',
+                ]);
+            }
+        }
+
+        // Prevent double booking / scheduling conflict
+        $conflict = Appointment::where('doctor_id', $doctor->id)
+            ->whereDate('appointment_date', $validated['appointment_date'])
+            ->where('appointment_time', $validated['appointment_time'])
+            ->whereNotIn('status', ['cancelled', 'no_show'])
+            ->exists();
+
+        if ($conflict) {
+            return back()->withInput()->withErrors([
+                'appointment_time' => "Dr. {$doctor->user->name} already has a consultation scheduled at {$validated['appointment_time']} on {$validated['appointment_date']}.",
+            ]);
+        }
+
         $validated['department_id'] = $validated['department_id'] ?? $doctor->department_id;
         $validated['appointment_number'] = Appointment::generateNumber();
         $validated['status'] = 'scheduled';

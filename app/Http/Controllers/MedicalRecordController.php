@@ -112,6 +112,24 @@ class MedicalRecordController extends Controller
                 }
             }
 
+            // Check drug-allergy contraindications
+            $patient = Patient::findOrFail($validated['patient_id']);
+            if (! empty($request->input('medicines')) && ! empty($patient->allergies) && is_array($patient->allergies)) {
+                $allergiesLower = array_map('strtolower', array_map('trim', $patient->allergies));
+                foreach ($request->input('medicines') as $medItem) {
+                    if (! empty($medItem['id'])) {
+                        $medicine = Medicine::find($medItem['id']);
+                        if ($medicine) {
+                            foreach ($allergiesLower as $allergy) {
+                                if (! empty($allergy) && (str_contains(strtolower($medicine->brand_name), $allergy) || str_contains(strtolower($medicine->generic_name), $allergy))) {
+                                    throw new \Exception("CLINICAL SAFETY ALERT: Patient {$patient->full_name} has a documented allergy to '{$allergy}'. Cannot prescribe '{$medicine->brand_name}' ({$medicine->generic_name}).");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Create Prescription if medicines specified
             if (! empty($request->input('medicines'))) {
                 $prescribedMeds = array_filter($request->input('medicines'), fn ($m) => ! empty($m['id']) && ! empty($m['quantity']));
@@ -158,6 +176,9 @@ class MedicalRecordController extends Controller
                         'status' => 'pending',
                     ]);
 
+                    $totalLabCost = 0.00;
+                    $labInvoiceItems = [];
+
                     foreach ($testIds as $testTypeId) {
                         $testType = LabTestType::find($testTypeId);
                         if ($testType) {
@@ -170,6 +191,36 @@ class MedicalRecordController extends Controller
                                 'reference_range' => $testType->reference_range ?? 'Standard',
                                 'flag' => 'normal',
                             ]);
+
+                            $totalLabCost += (float) $testType->price;
+                            $labInvoiceItems[] = [
+                                'item_type' => 'lab_test',
+                                'description' => "Lab Investigation: {$testType->name}",
+                                'quantity' => 1,
+                                'unit_price' => $testType->price,
+                                'subtotal' => $testType->price,
+                            ];
+                        }
+                    }
+
+                    // Generate invoice for ordered lab tests
+                    if ($totalLabCost > 0) {
+                        $labInvoice = Invoice::create([
+                            'invoice_number' => Invoice::generateNumber(),
+                            'patient_id' => $encounter->patient_id,
+                            'total_amount' => $totalLabCost,
+                            'paid_amount' => 0.00,
+                            'balance_due' => $totalLabCost,
+                            'payment_status' => 'unpaid',
+                            'invoice_date' => now()->toDateString(),
+                            'due_date' => now()->addDays(5)->toDateString(),
+                            'generated_by_id' => Auth::id(),
+                            'notes' => 'Laboratory investigation fee for order '.$labRequest->request_number,
+                        ]);
+
+                        foreach ($labInvoiceItems as $item) {
+                            $item['invoice_id'] = $labInvoice->id;
+                            InvoiceItem::create($item);
                         }
                     }
                 }

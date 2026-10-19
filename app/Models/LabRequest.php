@@ -60,8 +60,17 @@ class LabRequest extends Model
     public static function generateNumber(): string
     {
         $year = date('Y');
-        $count = static::whereYear('created_at', $year)->count() + 1;
+        $prefix = "LAB-{$year}-";
 
-        return sprintf('LAB-%s-%04d', $year, $count);
+        $last = static::where('request_number', 'like', "{$prefix}%")
+            ->orderByRaw('LENGTH(request_number) DESC, request_number DESC')
+            ->value('request_number');
+
+        $nextSeq = 1;
+        if ($last && preg_match('/LAB-\d{4}-(\d+)/', $last, $matches)) {
+            $nextSeq = ((int) $matches[1]) + 1;
+        }
+
+        return sprintf('LAB-%s-%04d', $year, $nextSeq);
     }
 }

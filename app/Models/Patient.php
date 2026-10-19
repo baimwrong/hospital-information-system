@@ -6,10 +6,11 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Patient extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'mrn',
@@ -87,14 +88,29 @@ class Patient extends Model
         return $this->hasMany(Invoice::class)->latest('invoice_date');
     }
 
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class)->latest();
+    }
+
     /**
-     * Generate next sequential Medical Record Number.
+     * Generate next sequential Medical Record Number atomically and collision-free.
      */
     public static function generateMRN(): string
     {
         $year = date('Y');
-        $count = static::whereYear('created_at', $year)->count() + 1;
+        $prefix = "MRN-{$year}-";
 
-        return sprintf('MRN-%s-%04d', $year, $count);
+        $last = static::withTrashed()
+            ->where('mrn', 'like', "{$prefix}%")
+            ->orderByRaw('LENGTH(mrn) DESC, mrn DESC')
+            ->value('mrn');
+
+        $nextSeq = 1;
+        if ($last && preg_match('/MRN-\d{4}-(\d+)/', $last, $matches)) {
+            $nextSeq = ((int) $matches[1]) + 1;
+        }
+
+        return sprintf('MRN-%s-%04d', $year, $nextSeq);
     }
 }

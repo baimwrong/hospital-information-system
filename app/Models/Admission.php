@@ -64,8 +64,17 @@ class Admission extends Model
     public static function generateNumber(): string
     {
         $year = date('Y');
-        $count = static::whereYear('created_at', $year)->count() + 1;
+        $prefix = "ADM-{$year}-";
 
-        return sprintf('ADM-%s-%04d', $year, $count);
+        $last = static::where('admission_number', 'like', "{$prefix}%")
+            ->orderByRaw('LENGTH(admission_number) DESC, admission_number DESC')
+            ->value('admission_number');
+
+        $nextSeq = 1;
+        if ($last && preg_match('/ADM-\d{4}-(\d+)/', $last, $matches)) {
+            $nextSeq = ((int) $matches[1]) + 1;
+        }
+
+        return sprintf('ADM-%s-%04d', $year, $nextSeq);
     }
 }

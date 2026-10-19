@@ -61,8 +61,15 @@ class Medicine extends Model
 
     public static function generateCode(): string
     {
-        $count = static::count() + 1;
+        $last = static::where('code', 'like', 'MED-%')
+            ->orderByRaw('LENGTH(code) DESC, code DESC')
+            ->value('code');
 
-        return sprintf('MED-%04d', $count);
+        $nextSeq = 1;
+        if ($last && preg_match('/MED-(\d+)/', $last, $matches)) {
+            $nextSeq = ((int) $matches[1]) + 1;
+        }
+
+        return sprintf('MED-%04d', $nextSeq);
     }
 }

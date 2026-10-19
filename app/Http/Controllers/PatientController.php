@@ -49,7 +49,7 @@ class PatientController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'mrn' => 'required|string|unique:patients,mrn',
+            'mrn' => 'nullable|string|max:50',
             'first_name' => 'required|string|max:100',
             'last_name' => 'required|string|max:100',
             'email' => 'nullable|email|max:150',
@@ -68,6 +68,10 @@ class PatientController extends Controller
             'insurance_provider' => 'nullable|string|max:100',
             'insurance_policy_number' => 'nullable|string|max:100',
         ]);
+
+        if (empty($validated['mrn']) || Patient::where('mrn', $validated['mrn'])->exists()) {
+            $validated['mrn'] = Patient::generateMRN();
+        }
 
         if (! empty($validated['allergies'])) {
             $validated['allergies'] = array_filter(array_map('trim', explode(',', $validated['allergies'])));
@@ -157,6 +161,7 @@ class PatientController extends Controller
         $name = $patient->full_name;
         $mrn = $patient->mrn;
 
+        $patient->update(['status' => 'archived']);
         $patient->delete();
 
         AuditLog::log('DELETE', 'Patients', "Deleted patient record {$name} ({$mrn})");

@@ -134,23 +134,53 @@ class PharmacyController extends Controller
 
     public function dispense(Request $request, Prescription $prescription): RedirectResponse
     {
-        if ($prescription->status === 'dispensed') {
-            return back()->with('info', 'This prescription has already been dispensed.');
-        }
-
         DB::beginTransaction();
 
         try {
+            $prescription = Prescription::with(['items', 'patient'])
+                ->where('id', $prescription->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($prescription->status === 'dispensed') {
+                DB::rollBack();
+
+                return back()->with('info', 'This prescription has already been dispensed.');
+            }
+
             $totalMedicineCost = 0.00;
             $dispensedItems = [];
 
             foreach ($prescription->items as $item) {
-                $med = $item->medicine;
+                $med = Medicine::where('id', $item->medicine_id)->lockForUpdate()->firstOrFail();
+
+                // Safety guard: Block dispensing expired medicines
+                if ($med->isExpired()) {
+                    $expiryStr = $med->expiry_date ? $med->expiry_date->toDateString() : 'recorded past date';
+                    throw new \Exception("Cannot dispense {$med->brand_name} ({$med->code}): batch has expired on {$expiryStr}.");
+                }
+
+                // Safety guard: Verify allergy contraindications
+                $patientAllergies = $prescription->patient?->allergies ?? [];
+                if (! empty($patientAllergies) && is_array($patientAllergies)) {
+                    foreach ($patientAllergies as $allergy) {
+                        $allergyLower = strtolower(trim((string) $allergy));
+                        if ($allergyLower === '' || $allergyLower === 'none' || $allergyLower === 'nkda') {
+                            continue;
+                        }
+                        if (str_contains(strtolower($med->generic_name), $allergyLower) ||
+                            str_contains(strtolower($med->brand_name), $allergyLower)) {
+                            throw new \Exception("CRITICAL CONTRAINDICATION: Patient has a recorded allergy to '{$allergy}', which matches prescribed medication {$med->brand_name} ({$med->generic_name}). Dispensing halted for patient safety.");
+                        }
+                    }
+                }
+
                 if ($med->stock_quantity < $item->quantity_prescribed) {
                     throw new \Exception("Insufficient stock for {$med->brand_name}. Current available stock: {$med->stock_quantity}. Required: {$item->quantity_prescribed}.");
                 }
 
                 $med->decrement('stock_quantity', $item->quantity_prescribed);
+                $med->refresh();
                 if ($med->stock_quantity <= 0) {
                     $med->update(['status' => 'out_of_stock']);
                 }

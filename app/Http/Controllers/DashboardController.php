@@ -11,6 +11,7 @@ use App\Models\LabRequest;
 use App\Models\Medicine;
 use App\Models\Patient;
 use App\Models\PatientVital;
+use App\Models\Payment;
 use Carbon\Carbon;
 use Illuminate\View\View;
 
@@ -19,6 +20,8 @@ class DashboardController extends Controller
     public function index(): View
     {
         $today = Carbon::today();
+
+        $todayPayments = (float) Payment::whereDate('created_at', $today)->sum('amount');
 
         $metrics = [
             'total_patients' => Patient::count(),
@@ -29,7 +32,7 @@ class DashboardController extends Controller
             'total_beds' => Bed::count(),
             'pending_lab_tests' => LabRequest::whereIn('status', ['pending', 'sample_collected', 'processing'])->count(),
             'low_stock_medicines' => Medicine::whereColumn('stock_quantity', '<=', 'min_stock_alert')->count(),
-            'today_revenue' => (float) Invoice::whereDate('invoice_date', $today)->sum('paid_amount'),
+            'today_revenue' => $todayPayments > 0 ? $todayPayments : (float) Invoice::whereDate('invoice_date', $today)->sum('paid_amount'),
         ];
 
         // Bed occupancy rate percentage

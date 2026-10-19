@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Patient;
+use App\Models\Payment;
 use App\Models\Setting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -58,6 +59,13 @@ class BillingController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        if ($request->has('items') && is_array($request->input('items'))) {
+            $filtered = array_values(array_filter($request->input('items'), function ($item) {
+                return ! empty($item['description']) && isset($item['unit_price']) && $item['unit_price'] !== '';
+            }));
+            $request->merge(['items' => $filtered]);
+        }
+
         $validated = $request->validate([
             'patient_id' => 'required|exists:patients,id',
             'invoice_date' => 'required|date',
@@ -132,7 +140,7 @@ class BillingController extends Controller
 
     public function show(Invoice $invoice): View
     {
-        $invoice->load(['patient', 'items', 'generatedBy', 'appointment.doctor.user', 'admission.bed.ward']);
+        $invoice->load(['patient', 'items', 'generatedBy', 'appointment.doctor.user', 'admission.bed.ward', 'payments.recordedBy']);
         $hospitalName = Setting::get('hospital_name', 'General Hospital');
         $hospitalAddress = Setting::get('hospital_address', '124 Healthcare Boulevard, Medical District');
         $hospitalPhone = Setting::get('hospital_phone', '+1 (555) 019-4820');
@@ -146,29 +154,57 @@ class BillingController extends Controller
         $validated = $request->validate([
             'amount' => 'required|numeric|min:0.01|max:'.$invoice->balance_due,
             'payment_method' => 'required|in:cash,credit_card,debit_card,bank_transfer,insurance',
+            'transaction_reference' => 'nullable|string|max:100',
             'notes' => 'nullable|string',
         ]);
 
-        $amount = (float) $validated['amount'];
-        $invoice->paid_amount += $amount;
-        $invoice->balance_due = max(0, $invoice->total_amount - $invoice->paid_amount);
-        $invoice->payment_method = $validated['payment_method'];
+        DB::beginTransaction();
 
-        if ($invoice->balance_due <= 0) {
-            $invoice->payment_status = 'paid';
-        } else {
-            $invoice->payment_status = 'partial';
+        try {
+            $lockedInvoice = Invoice::where('id', $invoice->id)->lockForUpdate()->firstOrFail();
+
+            $amount = (float) $validated['amount'];
+            if ($amount > (float) $lockedInvoice->balance_due) {
+                throw new \Exception('Payment amount cannot exceed remaining balance due.');
+            }
+
+            $payment = Payment::create([
+                'payment_number' => Payment::generateNumber(),
+                'invoice_id' => $lockedInvoice->id,
+                'patient_id' => $lockedInvoice->patient_id,
+                'amount' => $amount,
+                'payment_method' => $validated['payment_method'],
+                'transaction_reference' => $validated['transaction_reference'] ?? null,
+                'notes' => $validated['notes'] ?? null,
+                'recorded_by_id' => Auth::id(),
+            ]);
+
+            $lockedInvoice->paid_amount += $amount;
+            $lockedInvoice->balance_due = max(0, $lockedInvoice->total_amount - $lockedInvoice->paid_amount);
+            $lockedInvoice->payment_method = $validated['payment_method'];
+
+            if ($lockedInvoice->balance_due <= 0) {
+                $lockedInvoice->payment_status = 'paid';
+            } else {
+                $lockedInvoice->payment_status = 'partial';
+            }
+
+            if (! empty($validated['notes'])) {
+                $lockedInvoice->notes = ($lockedInvoice->notes ? $lockedInvoice->notes."\n" : '').'Payment '.$payment->payment_number.': '.$amount.' via '.$validated['payment_method'].' ('.now()->format('Y-m-d H:i').')';
+            }
+
+            $lockedInvoice->save();
+
+            DB::commit();
+
+            AuditLog::log('PAYMENT', 'Billing', "Recorded payment {$payment->payment_number} of {$amount} on invoice {$lockedInvoice->invoice_number} via {$validated['payment_method']}", (string) $payment->id);
+
+            return back()->with('success', "Payment {$payment->payment_number} of {$amount} recorded. Remaining balance: {$lockedInvoice->balance_due}.");
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return back()->withErrors(['error' => 'Payment failed: '.$e->getMessage()]);
         }
-
-        if (! empty($validated['notes'])) {
-            $invoice->notes = ($invoice->notes ? $invoice->notes."\n" : '').'Payment: '.$amount.' via '.$validated['payment_method'].' ('.now()->format('Y-m-d H:i').')';
-        }
-
-        $invoice->save();
-
-        AuditLog::log('PAYMENT', 'Billing', "Recorded payment of {$amount} on invoice {$invoice->invoice_number} via {$validated['payment_method']}", (string) $invoice->id);
-
-        return back()->with('success', "Payment of {$amount} recorded. Remaining balance: {$invoice->balance_due}.");
     }
 
     public function print(Invoice $invoice): View

@@ -60,25 +60,27 @@ class BulkImportService
             foreach ($rows as $index => $row) {
                 $rowNum = $index + 2; // Row 1 is header
                 try {
-                    switch ($entityType) {
-                        case 'patients':
-                            $this->importPatient($row, $rowNum);
-                            break;
-                        case 'doctors':
-                            $this->importDoctor($row, $rowNum);
-                            break;
-                        case 'medicines':
-                            $this->importMedicine($row, $rowNum);
-                            break;
-                        case 'lab_test_types':
-                            $this->importLabTestType($row, $rowNum);
-                            break;
-                        case 'departments':
-                            $this->importDepartment($row, $rowNum);
-                            break;
-                        default:
-                            throw new \InvalidArgumentException("Unsupported entity type: {$entityType}");
-                    }
+                    DB::transaction(function () use ($entityType, $row, $rowNum) {
+                        switch ($entityType) {
+                            case 'patients':
+                                $this->importPatient($row, $rowNum);
+                                break;
+                            case 'doctors':
+                                $this->importDoctor($row, $rowNum);
+                                break;
+                            case 'medicines':
+                                $this->importMedicine($row, $rowNum);
+                                break;
+                            case 'lab_test_types':
+                                $this->importLabTestType($row, $rowNum);
+                                break;
+                            case 'departments':
+                                $this->importDepartment($row, $rowNum);
+                                break;
+                            default:
+                                throw new \InvalidArgumentException("Unsupported entity type: {$entityType}");
+                        }
+                    });
                     $successful++;
                 } catch (\Throwable $e) {
                     $failed++;
@@ -338,40 +340,55 @@ class BulkImportService
             return [];
         }
 
-        $fileContent = file_get_contents($filePath);
-        // Strip UTF-8 BOM if present
-        $fileContent = preg_replace('/^\xEF\xBB\xBF/', '', $fileContent);
-
-        $lines = preg_split('/\r\n|\r|\n/', trim($fileContent));
-        if (empty($lines)) {
+        $handle = fopen($filePath, 'r');
+        if (! $handle) {
             return [];
         }
 
-        $delimiter = str_contains($lines[0], ';') ? ';' : ',';
-        $headerLine = array_shift($lines);
-        $headers = str_getcsv($headerLine, $delimiter);
+        // Peek first line to detect delimiter and handle BOM
+        $firstLine = fgets($handle);
+        if ($firstLine === false) {
+            fclose($handle);
+
+            return [];
+        }
+
+        // Strip UTF-8 BOM if present
+        $cleanFirstLine = preg_replace('/^\xEF\xBB\xBF/', '', $firstLine);
+        $delimiter = str_contains($cleanFirstLine, ';') ? ';' : ',';
+
+        // Parse headers from the first cleaned line
+        $headers = str_getcsv($cleanFirstLine, $delimiter);
+        if (empty($headers) || empty(array_filter($headers))) {
+            fclose($handle);
+
+            return [];
+        }
 
         // Normalize headers: lowercase, trim, replace spaces with underscores
         $normalizedHeaders = array_map(function ($h) {
-            return strtolower(trim(str_replace([' ', '-'], '_', $h)));
+            return strtolower(trim(str_replace([' ', '-'], '_', (string) $h)));
         }, $headers);
 
         $rows = [];
-        foreach ($lines as $line) {
-            if (trim($line) === '') {
+        while (($cols = fgetcsv($handle, 0, $delimiter)) !== false) {
+            // Skip empty rows
+            if (count($cols) === 1 && trim((string) $cols[0]) === '') {
                 continue;
             }
-            $cols = str_getcsv($line, $delimiter);
+
             if (count($cols) < count($normalizedHeaders)) {
                 $cols = array_pad($cols, count($normalizedHeaders), '');
             }
 
             $row = [];
             foreach ($normalizedHeaders as $idx => $key) {
-                $row[$key] = trim($cols[$idx] ?? '');
+                $row[$key] = trim((string) ($cols[$idx] ?? ''));
             }
             $rows[] = $row;
         }
+
+        fclose($handle);
 
         return $rows;
     }

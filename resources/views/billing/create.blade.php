@@ -35,9 +35,15 @@
                 </div>
             </div>
 
-            <h6 class="fw-bold text-primary mb-3">Itemized Billing Charges *</h6>
-            <div id="itemsContainer" class="mb-4">
-                <div class="row g-2 mb-2 item-row">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <h6 class="fw-bold text-primary mb-0"><i class="bi bi-list-check me-1"></i> Itemized Billing Charges *</h6>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="addItemBtn">
+                    <i class="bi bi-plus-circle me-1"></i> Add Line Item
+                </button>
+            </div>
+
+            <div id="itemsContainer" class="mb-3">
+                <div class="row g-2 mb-2 item-row align-items-center">
                     <div class="col-md-3">
                         <select name="items[0][item_type]" class="form-select form-select-sm" required>
                             <option value="procedure">Clinical Procedure</option>
@@ -53,29 +59,35 @@
                     <div class="col-md-2">
                         <input type="number" name="items[0][quantity]" class="form-control form-control-sm qty-input" value="1" min="1" required>
                     </div>
-                    <div class="col-md-3">
-                        <input type="number" step="0.01" name="items[0][unit_price]" class="form-control form-control-sm price-input" placeholder="Unit Price" required>
+                    <div class="col-md-2">
+                        <input type="number" step="0.01" name="items[0][unit_price]" class="form-control form-control-sm price-input" placeholder="0.00" required>
+                    </div>
+                    <div class="col-md-1 text-center">
+                        <button type="button" class="btn btn-sm btn-outline-danger remove-item-btn" title="Remove Item" disabled>
+                            <i class="bi bi-trash"></i>
+                        </button>
                     </div>
                 </div>
+            </div>
 
-                <div class="row g-2 mb-2 item-row">
-                    <div class="col-md-3">
-                        <select name="items[1][item_type]" class="form-select form-select-sm">
-                            <option value="medication">Medication / Consumable</option>
-                            <option value="procedure">Clinical Procedure</option>
-                            <option value="consultation">Consultation Fee</option>
-                            <option value="lab_test">Laboratory Investigation</option>
-                            <option value="bed_charge">Nursing / Ward Charge</option>
-                        </select>
+            <!-- Live Calculation Summary Card -->
+            <div class="card bg-light border-0 mb-4 p-3">
+                <div class="row g-2 align-items-center small">
+                    <div class="col-sm-3">
+                        <span class="text-muted">Gross Subtotal:</span>
+                        <div class="fw-bold fs-6 text-dark" id="displaySubtotal">$0.00</div>
                     </div>
-                    <div class="col-md-4">
-                        <input type="text" name="items[1][description]" class="form-control form-control-sm" placeholder="Additional service (optional)...">
+                    <div class="col-sm-3">
+                        <span class="text-muted">Discount:</span>
+                        <div class="fw-bold fs-6 text-danger" id="displayDiscount">-$0.00</div>
                     </div>
-                    <div class="col-md-2">
-                        <input type="number" name="items[1][quantity]" class="form-control form-control-sm qty-input" value="1" min="1">
+                    <div class="col-sm-3">
+                        <span class="text-muted">Tax:</span>
+                        <div class="fw-bold fs-6 text-secondary" id="displayTax">+$0.00</div>
                     </div>
-                    <div class="col-md-3">
-                        <input type="number" step="0.01" name="items[1][unit_price]" class="form-control form-control-sm price-input" placeholder="Unit Price">
+                    <div class="col-sm-3 text-sm-end">
+                        <span class="text-muted">Total Net Payable:</span>
+                        <div class="fw-bold fs-5 text-primary" id="displayTotal">$0.00</div>
                     </div>
                 </div>
             </div>
@@ -87,11 +99,11 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small fw-semibold">Discount Amount</label>
-                    <input type="number" step="0.01" name="discount_amount" class="form-control" value="{{ old('discount_amount', '0.00') }}">
+                    <input type="number" step="0.01" min="0" name="discount_amount" id="discountInput" class="form-control" value="{{ old('discount_amount', '0.00') }}">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small fw-semibold">Tax Amount</label>
-                    <input type="number" step="0.01" name="tax_amount" class="form-control" value="{{ old('tax_amount', '0.00') }}">
+                    <input type="number" step="0.01" min="0" name="tax_amount" id="taxInput" class="form-control" value="{{ old('tax_amount', '0.00') }}">
                 </div>
             </div>
 
@@ -102,4 +114,104 @@
         </form>
     </div>
 </div>
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    let itemIndex = 1;
+    const container = document.getElementById('itemsContainer');
+    const addItemBtn = document.getElementById('addItemBtn');
+    const discountInput = document.getElementById('discountInput');
+    const taxInput = document.getElementById('taxInput');
+
+    const displaySubtotal = document.getElementById('displaySubtotal');
+    const displayDiscount = document.getElementById('displayDiscount');
+    const displayTax = document.getElementById('displayTax');
+    const displayTotal = document.getElementById('displayTotal');
+
+    function calculateTotals() {
+        let subtotal = 0;
+        document.querySelectorAll('.item-row').forEach(row => {
+            const qty = parseFloat(row.querySelector('.qty-input')?.value || 0);
+            const price = parseFloat(row.querySelector('.price-input')?.value || 0);
+            if (!isNaN(qty) && !isNaN(price)) {
+                subtotal += (qty * price);
+            }
+        });
+
+        const discount = parseFloat(discountInput.value || 0) || 0;
+        const tax = parseFloat(taxInput.value || 0) || 0;
+        const total = Math.max(0, subtotal - discount + tax);
+
+        displaySubtotal.textContent = '$' + subtotal.toFixed(2);
+        displayDiscount.textContent = '-$' + discount.toFixed(2);
+        displayTax.textContent = '+$' + tax.toFixed(2);
+        displayTotal.textContent = '$' + total.toFixed(2);
+    }
+
+    function updateRemoveButtons() {
+        const rows = document.querySelectorAll('.item-row');
+        rows.forEach(row => {
+            const btn = row.querySelector('.remove-item-btn');
+            if (btn) {
+                btn.disabled = (rows.length <= 1);
+            }
+        });
+    }
+
+    addItemBtn.addEventListener('click', function () {
+        const newRow = document.createElement('div');
+        newRow.className = 'row g-2 mb-2 item-row align-items-center';
+        newRow.innerHTML = `
+            <div class="col-md-3">
+                <select name="items[${itemIndex}][item_type]" class="form-select form-select-sm" required>
+                    <option value="procedure">Clinical Procedure</option>
+                    <option value="consultation">Consultation Fee</option>
+                    <option value="medication">Medication / Consumable</option>
+                    <option value="lab_test">Laboratory Investigation</option>
+                    <option value="bed_charge">Nursing / Ward Charge</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <input type="text" name="items[${itemIndex}][description]" class="form-control form-control-sm" placeholder="Description of service/fee..." required>
+            </div>
+            <div class="col-md-2">
+                <input type="number" name="items[${itemIndex}][quantity]" class="form-control form-control-sm qty-input" value="1" min="1" required>
+            </div>
+            <div class="col-md-2">
+                <input type="number" step="0.01" name="items[${itemIndex}][unit_price]" class="form-control form-control-sm price-input" placeholder="0.00" required>
+            </div>
+            <div class="col-md-1 text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger remove-item-btn" title="Remove Item">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        `;
+        container.appendChild(newRow);
+        itemIndex++;
+        updateRemoveButtons();
+        calculateTotals();
+    });
+
+    container.addEventListener('click', function (e) {
+        const btn = e.target.closest('.remove-item-btn');
+        if (btn) {
+            const rows = document.querySelectorAll('.item-row');
+            if (rows.length > 1) {
+                btn.closest('.item-row').remove();
+                updateRemoveButtons();
+                calculateTotals();
+            }
+        }
+    });
+
+    container.addEventListener('input', calculateTotals);
+    discountInput.addEventListener('input', calculateTotals);
+    taxInput.addEventListener('input', calculateTotals);
+
+    calculateTotals();
+    updateRemoveButtons();
+});
+</script>
+@endpush
 @endsection

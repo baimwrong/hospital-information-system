@@ -59,8 +59,17 @@ class Appointment extends Model
     public static function generateNumber(): string
     {
         $year = date('Y');
-        $count = static::whereYear('created_at', $year)->count() + 1;
+        $prefix = "APT-{$year}-";
 
-        return sprintf('APT-%s-%04d', $year, $count);
+        $last = static::where('appointment_number', 'like', "{$prefix}%")
+            ->orderByRaw('LENGTH(appointment_number) DESC, appointment_number DESC')
+            ->value('appointment_number');
+
+        $nextSeq = 1;
+        if ($last && preg_match('/APT-\d{4}-(\d+)/', $last, $matches)) {
+            $nextSeq = ((int) $matches[1]) + 1;
+        }
+
+        return sprintf('APT-%s-%04d', $year, $nextSeq);
     }
 }

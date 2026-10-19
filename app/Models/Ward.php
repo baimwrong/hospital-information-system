@@ -35,6 +35,10 @@ class Ward extends Model
 
     public function availableBedsCount(): int
     {
+        if ($this->relationLoaded('beds')) {
+            return $this->beds->where('status', 'available')->count();
+        }
+
         return $this->beds()->where('status', 'available')->count();
     }
 }

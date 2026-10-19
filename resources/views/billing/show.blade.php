@@ -117,6 +117,38 @@
                 </div>
             </div>
 
+            @if($invoice->payments->isNotEmpty())
+                <div class="mt-4 pt-3 border-top">
+                    <h6 class="fw-bold text-dark mb-3"><i class="bi bi-clock-history text-primary me-1"></i> Recorded Payment Receipts</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Receipt #</th>
+                                    <th>Date & Time</th>
+                                    <th>Tender Method</th>
+                                    <th>Reference / Auth</th>
+                                    <th>Cashier</th>
+                                    <th class="text-end">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($invoice->payments as $payment)
+                                    <tr>
+                                        <td class="fw-bold text-primary">{{ $payment->payment_number }}</td>
+                                        <td>{{ $payment->created_at->format('M d, Y H:i') }}</td>
+                                        <td><span class="badge bg-light text-dark border text-capitalize">{{ str_replace('_', ' ', $payment->payment_method) }}</span></td>
+                                        <td>{{ $payment->transaction_reference ?? '-' }}</td>
+                                        <td>{{ $payment->recordedBy->name ?? 'System' }}</td>
+                                        <td class="text-end fw-bold text-success">{{ $currencySymbol }}{{ number_format($payment->amount, 2) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endif
+
             @if($invoice->notes)
                 <div class="mt-4 p-3 bg-light rounded border small text-muted">
                     <strong>Billing Notes:</strong><br>
@@ -181,8 +213,12 @@
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label small fw-semibold">Receipt Memo / Reference Number</label>
-                        <input type="text" name="notes" class="form-control" placeholder="Transaction ID, POS approval code...">
+                        <label class="form-label small fw-semibold">Transaction Reference / POS Approval Code</label>
+                        <input type="text" name="transaction_reference" class="form-control" placeholder="e.g. POS-AUTH-9812, TXN-0012">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Receipt Memo / Notes</label>
+                        <input type="text" name="notes" class="form-control" placeholder="Cash tendered at desk, partial installment, etc.">
                     </div>
                 </div>
                 <div class="modal-footer">
