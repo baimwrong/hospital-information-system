@@ -101,9 +101,16 @@
                             </span>
                         </td>
                         <td>
-                            <a href="{{ route('laboratory.show', $lab) }}" class="btn btn-sm btn-outline-primary">
-                                Lab Sheet & Results
-                            </a>
+                            <div class="d-flex align-items-center gap-1">
+                                <a href="{{ route('laboratory.show', $lab) }}" class="btn btn-sm btn-outline-primary">
+                                    Lab Sheet & Results
+                                </a>
+                                @if($lab->status === 'completed')
+                                    <a href="{{ route('laboratory.requests.print', $lab) }}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Print Official Report">
+                                        <i class="bi bi-printer"></i>
+                                    </a>
+                                @endif
+                            </div>
                         </td>
                     </tr>
                 @empty

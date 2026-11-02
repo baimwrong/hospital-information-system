@@ -102,6 +102,11 @@
             <i class="bi bi-receipt me-1"></i> Billing ({{ $patient->invoices->count() }})
         </button>
     </li>
+    <li class="nav-item">
+        <button class="nav-link" id="documents-tab" data-bs-toggle="tab" data-bs-target="#documents-pane" type="button" role="tab">
+            <i class="bi bi-paperclip me-1"></i> Documents ({{ $patient->documents->count() }})
+        </button>
+    </li>
 </ul>
 
 <!-- Tab Panes -->
@@ -177,6 +182,7 @@
                         <tr>
                             <th>Date & Time</th>
                             <th>Triage</th>
+                            <th>NEWS2</th>
                             <th>BP (mmHg)</th>
                             <th>Heart Rate</th>
                             <th>Temp (°C)</th>
@@ -193,6 +199,15 @@
                                 <td>
                                     <span class="badge badge-{{ $v->triage_level }} text-capitalize">{{ $v->triage_level }}</span>
                                 </td>
+                                <td>
+                                    @if($v->news2_score !== null)
+                                        <span class="badge bg-{{ $v->news2_risk_level === 'high' ? 'danger' : ($v->news2_risk_level === 'medium' ? 'warning text-dark' : 'success') }}" title="National Early Warning Score: {{ $v->news2_score }}">
+                                            Score {{ $v->news2_score }} ({{ ucfirst($v->news2_risk_level) }})
+                                        </span>
+                                    @else
+                                        <span class="text-muted small">-</span>
+                                    @endif
+                                </td>
                                 <td class="fw-bold {{ ($v->blood_pressure_systolic > 140) ? 'text-danger' : '' }}">
                                     {{ $v->blood_pressure_systolic }}/{{ $v->blood_pressure_diastolic }}
                                 </td>
@@ -205,7 +220,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="text-center py-4 text-muted">No vitals entries recorded.</td>
+                                <td colspan="10" class="text-center py-4 text-muted">No vitals entries recorded.</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -406,6 +421,131 @@
                 </table>
             </div>
         </div>
+    </div>
+
+    <!-- Documents & Scans Tab -->
+    <div class="tab-pane fade" id="documents-pane" role="tabpanel">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold mb-0">Attached Medical Documents, Imaging & Scans</h5>
+            <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#uploadDocModal">
+                <i class="bi bi-cloud-arrow-up me-1"></i> Attach Document / Scan
+            </button>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Document Title</th>
+                            <th>Type</th>
+                            <th>File Name & Size</th>
+                            <th>Attached By</th>
+                            <th>Uploaded On</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($patient->documents as $doc)
+                            <tr>
+                                <td>
+                                    <strong>{{ $doc->title }}</strong>
+                                    @if($doc->notes)
+                                        <div class="small text-muted text-truncate" style="max-width: 250px;">{{ $doc->notes }}</div>
+                                    @endif
+                                </td>
+                                <td>
+                                    <span class="badge bg-light text-dark border text-capitalize">
+                                        {{ str_replace('_', ' ', $doc->document_type) }}
+                                    </span>
+                                </td>
+                                <td class="small">
+                                    <i class="bi bi-file-earmark-medical text-primary me-1"></i>
+                                    {{ $doc->file_name }} ({{ $doc->formatted_size }})
+                                </td>
+                                <td class="small text-muted">{{ $doc->uploadedBy->name ?? 'Staff' }}</td>
+                                <td class="small text-muted">{{ $doc->created_at->format('M d, Y - H:i') }}</td>
+                                <td class="text-end">
+                                    <a href="{{ route('patients.documents.download', [$patient, $doc]) }}" class="btn btn-sm btn-outline-primary py-0 px-2" title="Download Document">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                    @if(auth()->user()->isAdmin() || auth()->user()->isDoctor())
+                                        <form action="{{ route('patients.documents.destroy', [$patient, $doc]) }}" method="POST" class="d-inline" onsubmit="return confirm('Archive this medical document?');">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Remove Document">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    @endif
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">No external documents, reports, or radiology scans attached yet.</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Upload Medical Document -->
+<div class="modal fade" id="uploadDocModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form action="{{ route('patients.documents.upload', $patient) }}" method="POST" enctype="multipart/form-data">
+            @csrf
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">Attach Medical Document / Imaging</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Document Title *</label>
+                        <input type="text" name="title" class="form-control" placeholder="e.g. Chest X-Ray PA View / External Lab Lipid Panel" required>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Classification *</label>
+                            <select name="document_type" class="form-select" required>
+                                <option value="imaging_scan">Radiology / Imaging Scan</option>
+                                <option value="lab_report">External Pathology / Lab Report</option>
+                                <option value="referral_letter">Referral Letter / Specialist Consult</option>
+                                <option value="discharge_summary">External Discharge Summary</option>
+                                <option value="general" selected>General Medical Record</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Related Encounter</label>
+                            <select name="medical_record_id" class="form-select">
+                                <option value="">-- Standalone attachment --</option>
+                                @foreach($patient->medicalRecords as $mr)
+                                    <option value="{{ $mr->id }}">{{ $mr->encounter_number }} ({{ $mr->diagnosis_primary }})</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">File Upload (PDF, Image, Scanned Document - max 20MB) *</label>
+                        <input type="file" name="file" class="form-control" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Clinical Notes / Findings</label>
+                        <textarea name="notes" class="form-control" rows="2" placeholder="Impression or clinical notes..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm fw-bold">Upload to Patient Record</button>
+                </div>
+            </div>
+        </form>
     </div>
 </div>
 @endsection

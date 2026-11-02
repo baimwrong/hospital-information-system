@@ -82,6 +82,11 @@
 
                 @if(Auth::check() && Auth::user()->isAdmin())
                 <div class="nav-section-title">Administration</div>
+                <a href="{{ route('admin.users.index') }}" class="sidebar-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
+                    <i class="bi bi-people-fill"></i>
+                    <span>Staff Accounts</span>
+                </a>
+
                 <a href="{{ route('admin.bulk-import.index') }}" class="sidebar-link {{ request()->routeIs('admin.bulk-import.*') ? 'active' : '' }}">
                     <i class="bi bi-cloud-arrow-up"></i>
                     <span>Bulk Data Import</span>
@@ -109,7 +114,12 @@
                         <span class="badge bg-secondary text-capitalize" style="font-size: 0.65rem;">{{ Auth::user()->role ?? 'staff' }}</span>
                     </div>
                 </div>
-                <form action="{{ route('logout') }}" method="POST">
+                <div class="d-flex gap-1 mb-2">
+                    <a href="{{ route('profile') }}" class="btn btn-outline-light btn-sm flex-fill d-flex align-items-center justify-content-center gap-1" style="font-size: 0.75rem;">
+                        <i class="bi bi-person-gear"></i> My Profile
+                    </a>
+                </div>
+                <form id="logout-form" action="{{ route('logout') }}" method="POST">
                     @csrf
                     <button type="submit" class="btn btn-outline-danger btn-sm w-100 d-flex align-items-center justify-content-center gap-1">
                         <i class="bi bi-box-arrow-right"></i> Sign Out
@@ -140,6 +150,9 @@
                     </a>
                     <a href="{{ route('appointments.create') }}" class="btn btn-sm btn-outline-primary d-flex align-items-center gap-1">
                         <i class="bi bi-calendar-plus"></i> <span class="d-none d-md-inline">New Appointment</span>
+                    </a>
+                    <a href="{{ route('profile') }}" class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 ms-1" title="My Profile & Security">
+                        <i class="bi bi-person-gear"></i> <span class="d-none d-lg-inline">Profile</span>
                     </a>
                 </div>
             </header>
@@ -196,12 +209,122 @@
         </div>
     </div>
 
+    @auth
+    <!-- Inactivity Auto-Logout Modal -->
+    <div class="modal fade" id="inactivityModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="inactivityModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-warning bg-opacity-25 py-3">
+                    <h5 class="modal-title text-dark fw-bold" id="inactivityModalLabel">
+                        <i class="bi bi-shield-exclamation text-warning me-2"></i>Session Inactivity Warning
+                    </h5>
+                </div>
+                <div class="modal-body p-4 text-center">
+                    <p class="mb-3 text-muted">
+                        To protect sensitive patient health data (HIPAA compliance), clinical workstations are locked automatically when idle.
+                    </p>
+                    <div class="fs-4 fw-bold text-danger mb-3" id="inactivityCountdown">
+                        Auto-logging out in 60 seconds
+                    </div>
+                    <p class="small text-secondary mb-0">
+                        Click below to verify presence and continue your active session.
+                    </p>
+                </div>
+                <div class="modal-footer bg-light justify-content-center">
+                    <button type="button" class="btn btn-primary px-4 fw-semibold" id="staySignedInBtn">
+                        <i class="bi bi-check2-circle me-1"></i> Stay Signed In
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('logout-form').submit()">
+                        <i class="bi bi-box-arrow-right me-1"></i> Sign Out Now
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endauth
+
     <!-- Local Offline JS -->
     <script src="{{ asset('vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     <script>
         document.getElementById('sidebarToggle')?.addEventListener('click', function() {
             document.querySelector('.sidebar').classList.toggle('d-none');
         });
+
+        @auth
+        (function() {
+            // 15-minute inactivity auto-logout guard (14 min idle + 60s warning)
+            const IDLE_LIMIT_MS = 14 * 60 * 1000;
+            const WARNING_COUNTDOWN_SEC = 60;
+            let idleTimer = null;
+            let countdownTimer = null;
+            let secondsRemaining = WARNING_COUNTDOWN_SEC;
+            let modalInstance = null;
+
+            function getModal() {
+                if (!modalInstance && window.bootstrap && document.getElementById('inactivityModal')) {
+                    modalInstance = new bootstrap.Modal(document.getElementById('inactivityModal'));
+                }
+                return modalInstance;
+            }
+
+            function showWarning() {
+                const modal = getModal();
+                if (modal) {
+                    modal.show();
+                }
+                secondsRemaining = WARNING_COUNTDOWN_SEC;
+                updateCountdownDisplay();
+                
+                countdownTimer = setInterval(function() {
+                    secondsRemaining--;
+                    updateCountdownDisplay();
+                    if (secondsRemaining <= 0) {
+                        clearInterval(countdownTimer);
+                        const logoutForm = document.getElementById('logout-form');
+                        if (logoutForm) {
+                            logoutForm.submit();
+                        }
+                    }
+                }, 1000);
+            }
+
+            function updateCountdownDisplay() {
+                const el = document.getElementById('inactivityCountdown');
+                if (el) {
+                    el.innerText = 'Auto-logging out in ' + secondsRemaining + ' seconds';
+                }
+            }
+
+            function resetIdleTimer() {
+                if (countdownTimer) {
+                    return;
+                }
+                clearTimeout(idleTimer);
+                idleTimer = setTimeout(showWarning, IDLE_LIMIT_MS);
+            }
+
+            function staySignedIn() {
+                if (countdownTimer) {
+                    clearInterval(countdownTimer);
+                    countdownTimer = null;
+                }
+                const modal = getModal();
+                if (modal) {
+                    modal.hide();
+                }
+                idleTimer = setTimeout(showWarning, IDLE_LIMIT_MS);
+            }
+
+            document.getElementById('staySignedInBtn')?.addEventListener('click', staySignedIn);
+
+            const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+            activityEvents.forEach(function(evt) {
+                window.addEventListener(evt, resetIdleTimer, { passive: true });
+            });
+
+            resetIdleTimer();
+        })();
+        @endauth
     </script>
     @stack('scripts')
 </body>

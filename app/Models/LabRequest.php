@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SequenceGenerator;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -59,18 +60,6 @@ class LabRequest extends Model
 
     public static function generateNumber(): string
     {
-        $year = date('Y');
-        $prefix = "LAB-{$year}-";
-
-        $last = static::where('request_number', 'like', "{$prefix}%")
-            ->orderByRaw('LENGTH(request_number) DESC, request_number DESC')
-            ->value('request_number');
-
-        $nextSeq = 1;
-        if ($last && preg_match('/LAB-\d{4}-(\d+)/', $last, $matches)) {
-            $nextSeq = ((int) $matches[1]) + 1;
-        }
-
-        return sprintf('LAB-%s-%04d', $year, $nextSeq);
+        return SequenceGenerator::generate('LAB', 'lab_requests', 'request_number', 4, true);
     }
 }

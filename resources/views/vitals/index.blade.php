@@ -40,6 +40,7 @@
                     <th>Timestamp</th>
                     <th>Patient</th>
                     <th>Triage Category</th>
+                    <th>NEWS2 Alert</th>
                     <th>Blood Pressure</th>
                     <th>Heart Rate</th>
                     <th>Temp</th>
@@ -62,6 +63,15 @@
                         <td>
                             <span class="badge badge-{{ $v->triage_level }} text-capitalize">{{ str_replace('_', ' ', $v->triage_level) }}</span>
                         </td>
+                        <td>
+                            @if($v->news2_score !== null)
+                                <span class="badge bg-{{ $v->news2_risk_level === 'high' ? 'danger' : ($v->news2_risk_level === 'medium' ? 'warning text-dark' : 'success') }}" title="National Early Warning Score: {{ $v->news2_score }}">
+                                    Score {{ $v->news2_score }} ({{ ucfirst($v->news2_risk_level) }})
+                                </span>
+                            @else
+                                <span class="text-muted small">-</span>
+                            @endif
+                        </td>
                         <td class="fw-bold {{ ($v->blood_pressure_systolic > 140) ? 'text-danger' : '' }}">
                             {{ $v->blood_pressure_systolic }}/{{ $v->blood_pressure_diastolic }} mmHg
                         </td>
@@ -76,7 +86,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="10" class="text-center py-5 text-muted">No vital signs entries recorded.</td>
+                        <td colspan="11" class="text-center py-5 text-muted">No vital signs entries recorded.</td>
                     </tr>
                 @endforelse
             </tbody>

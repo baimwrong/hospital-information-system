@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SequenceGenerator;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -63,18 +64,6 @@ class Admission extends Model
 
     public static function generateNumber(): string
     {
-        $year = date('Y');
-        $prefix = "ADM-{$year}-";
-
-        $last = static::where('admission_number', 'like', "{$prefix}%")
-            ->orderByRaw('LENGTH(admission_number) DESC, admission_number DESC')
-            ->value('admission_number');
-
-        $nextSeq = 1;
-        if ($last && preg_match('/ADM-\d{4}-(\d+)/', $last, $matches)) {
-            $nextSeq = ((int) $matches[1]) + 1;
-        }
-
-        return sprintf('ADM-%s-%04d', $year, $nextSeq);
+        return SequenceGenerator::generate('ADM', 'admissions', 'admission_number', 4, true);
     }
 }

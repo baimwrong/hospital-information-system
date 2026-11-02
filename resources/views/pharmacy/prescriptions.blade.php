@@ -69,18 +69,23 @@
                             @endif
                         </td>
                         <td>
-                            @if($rx->status !== 'dispensed')
-                                <form action="{{ route('pharmacy.prescriptions.dispense', $rx) }}" method="POST" onsubmit="return confirm('Dispense this prescription? Stock quantities will be deducted and billing generated.')">
-                                    @csrf
-                                    <button type="submit" class="btn btn-sm btn-success d-flex align-items-center gap-1">
-                                        <i class="bi bi-check-circle"></i> Dispense
-                                    </button>
-                                </form>
-                            @else
-                                <span class="badge bg-light text-success border">
-                                    <i class="bi bi-check2-all me-1"></i> Fulfilled
-                                </span>
-                            @endif
+                            <div class="d-flex align-items-center gap-1">
+                                <a href="{{ route('pharmacy.prescriptions.print', $rx) }}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Print Prescription Rx">
+                                    <i class="bi bi-printer"></i>
+                                </a>
+                                @if($rx->status !== 'dispensed')
+                                    <form action="{{ route('pharmacy.prescriptions.dispense', $rx) }}" method="POST" onsubmit="return confirm('Dispense this prescription? Stock quantities will be deducted and billing generated.')">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-success d-flex align-items-center gap-1">
+                                            <i class="bi bi-check-circle"></i> Dispense
+                                        </button>
+                                    </form>
+                                @else
+                                    <span class="badge bg-light text-success border">
+                                        <i class="bi bi-check2-all me-1"></i> Fulfilled
+                                    </span>
+                                @endif
+                            </div>
                         </td>
                     </tr>
                 @empty

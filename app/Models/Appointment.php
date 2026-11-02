@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SequenceGenerator;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -58,18 +59,6 @@ class Appointment extends Model
 
     public static function generateNumber(): string
     {
-        $year = date('Y');
-        $prefix = "APT-{$year}-";
-
-        $last = static::where('appointment_number', 'like', "{$prefix}%")
-            ->orderByRaw('LENGTH(appointment_number) DESC, appointment_number DESC')
-            ->value('appointment_number');
-
-        $nextSeq = 1;
-        if ($last && preg_match('/APT-\d{4}-(\d+)/', $last, $matches)) {
-            $nextSeq = ((int) $matches[1]) + 1;
-        }
-
-        return sprintf('APT-%s-%04d', $year, $nextSeq);
+        return SequenceGenerator::generate('APT', 'appointments', 'appointment_number', 4, true);
     }
 }

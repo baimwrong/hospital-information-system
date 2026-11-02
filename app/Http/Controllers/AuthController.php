@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -61,6 +62,11 @@ class AuthController extends Controller
 
             AuditLog::log('LOGIN', 'Auth', 'User logged in to the HIS system');
 
+            if (Auth::user()->must_change_password) {
+                return redirect()->route('profile')
+                    ->with('warning', 'Please change your temporary password to secure your staff account.');
+            }
+
             return redirect()->intended(route('dashboard'))
                 ->with('success', 'Welcome back, '.Auth::user()->name.'!');
         }
@@ -70,6 +76,48 @@ class AuthController extends Controller
         return back()->withErrors([
             'email' => 'The provided credentials do not match our medical staff records.',
         ])->onlyInput('email');
+    }
+
+    public function profile(): View
+    {
+        $user = Auth::user();
+
+        return view('auth.profile', compact('user'));
+    }
+
+    public function updateProfile(Request $request): RedirectResponse
+    {
+        $user = Auth::user();
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:150',
+            'phone' => 'nullable|string|max:30',
+        ]);
+
+        $user->update($validated);
+
+        AuditLog::log('UPDATE', 'Auth', "Staff member {$user->name} updated profile details");
+
+        return redirect()->back(fallback: route('profile'))->with('success', 'Profile information updated successfully.');
+    }
+
+    public function updatePassword(Request $request): RedirectResponse
+    {
+        $user = Auth::user();
+
+        $validated = $request->validate([
+            'current_password' => ['required', 'current_password'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $user->update([
+            'password' => Hash::make($validated['password']),
+            'must_change_password' => false,
+        ]);
+
+        AuditLog::log('UPDATE', 'Auth', "Staff member {$user->name} changed their password");
+
+        return redirect()->back(fallback: route('profile'))->with('success', 'Password updated successfully. Your account is secured.');
     }
 
     public function logout(Request $request): RedirectResponse

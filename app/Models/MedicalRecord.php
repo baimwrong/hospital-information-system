@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SequenceGenerator;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -61,21 +62,13 @@ class MedicalRecord extends Model
         return $this->hasMany(LabRequest::class);
     }
 
+    public function documents(): HasMany
+    {
+        return $this->hasMany(MedicalDocument::class);
+    }
+
     public static function generateNumber(): string
     {
-        $year = date('Y');
-        $prefix = "ENC-{$year}-";
-
-        $last = static::withTrashed()
-            ->where('encounter_number', 'like', "{$prefix}%")
-            ->orderByRaw('LENGTH(encounter_number) DESC, encounter_number DESC')
-            ->value('encounter_number');
-
-        $nextSeq = 1;
-        if ($last && preg_match('/ENC-\d{4}-(\d+)/', $last, $matches)) {
-            $nextSeq = ((int) $matches[1]) + 1;
-        }
-
-        return sprintf('ENC-%s-%04d', $year, $nextSeq);
+        return SequenceGenerator::generate('ENC', 'medical_records', 'encounter_number', 4, true);
     }
 }

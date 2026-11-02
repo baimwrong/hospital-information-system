@@ -51,6 +51,37 @@
                                     <div class="text-capitalize small text-muted" style="font-size: 0.7rem;">
                                         {{ $bed->status }}
                                     </div>
+                                    @if($bed->status !== 'occupied')
+                                        <div class="mt-2 pt-1 border-top d-flex justify-content-center gap-1">
+                                            @if($bed->status !== 'available')
+                                                <form action="{{ route('inpatient.beds.status', $bed) }}" method="POST" class="d-inline">
+                                                    @csrf
+                                                    <input type="hidden" name="status" value="available">
+                                                    <button type="submit" class="btn btn-sm btn-outline-success px-2 py-0" style="font-size: 0.68rem;" title="Mark Bed Clean & Available">
+                                                        <i class="bi bi-check-lg"></i> Ready
+                                                    </button>
+                                                </form>
+                                            @endif
+                                            @if($bed->status !== 'cleaning')
+                                                <form action="{{ route('inpatient.beds.status', $bed) }}" method="POST" class="d-inline">
+                                                    @csrf
+                                                    <input type="hidden" name="status" value="cleaning">
+                                                    <button type="submit" class="btn btn-sm btn-outline-warning px-2 py-0" style="font-size: 0.68rem;" title="Mark Cleaning Needed">
+                                                        <i class="bi bi-stars"></i> Clean
+                                                    </button>
+                                                </form>
+                                            @endif
+                                            @if($bed->status !== 'maintenance')
+                                                <form action="{{ route('inpatient.beds.status', $bed) }}" method="POST" class="d-inline">
+                                                    @csrf
+                                                    <input type="hidden" name="status" value="maintenance">
+                                                    <button type="submit" class="btn btn-sm btn-outline-secondary px-2 py-0" style="font-size: 0.68rem;" title="Set Maintenance">
+                                                        <i class="bi bi-tools"></i> Maint
+                                                    </button>
+                                                </form>
+                                            @endif
+                                        </div>
+                                    @endif
                                 </div>
                             </div>
                         @endforeach

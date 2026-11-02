@@ -85,6 +85,24 @@ class InpatientController extends Controller
         return back()->with('success', "Ward {$ward->name} created with {$ward->capacity} beds.");
     }
 
+    public function updateBedStatus(Request $request, Bed $bed): RedirectResponse
+    {
+        $validated = $request->validate([
+            'status' => 'required|in:available,cleaning,maintenance',
+        ]);
+
+        if ($bed->status === 'occupied') {
+            return back()->withErrors(['error' => "Bed {$bed->bed_number} is currently occupied by an admitted patient and cannot be updated directly."]);
+        }
+
+        $oldStatus = $bed->status;
+        $bed->update(['status' => $validated['status']]);
+
+        AuditLog::log('UPDATE', 'IPD', "Updated Bed {$bed->bed_number} status from {$oldStatus} to {$validated['status']}", (string) $bed->id);
+
+        return back()->with('success', "Bed {$bed->bed_number} status updated to {$validated['status']}.");
+    }
+
     public function createAdmission(Request $request): View
     {
         $patients = Patient::where('status', 'active')->orderBy('first_name')->get();
@@ -142,8 +160,69 @@ class InpatientController extends Controller
     public function show(Admission $admission): View
     {
         $admission->load(['patient.vitals', 'doctor.user', 'bed.ward']);
+        $availableBeds = Bed::with('ward')
+            ->where('status', 'available')
+            ->where('id', '!=', $admission->bed_id)
+            ->get();
 
-        return view('inpatient.show', compact('admission'));
+        return view('inpatient.show', compact('admission', 'availableBeds'));
+    }
+
+    public function transferBed(Request $request, Admission $admission): RedirectResponse
+    {
+        $validated = $request->validate([
+            'destination_bed_id' => 'required|exists:beds,id',
+            'transfer_reason' => 'nullable|string|max:255',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            $lockedAdmission = Admission::where('id', $admission->id)->lockForUpdate()->firstOrFail();
+            if ($lockedAdmission->status !== 'admitted') {
+                DB::rollBack();
+
+                return back()->withErrors(['error' => 'Only currently admitted patients can be transferred to a new bed.']);
+            }
+
+            if ((int) $lockedAdmission->bed_id === (int) $validated['destination_bed_id']) {
+                DB::rollBack();
+
+                return back()->withErrors(['destination_bed_id' => 'Patient is already assigned to this bed.']);
+            }
+
+            $currentBed = Bed::where('id', $lockedAdmission->bed_id)->lockForUpdate()->firstOrFail();
+            $destBed = Bed::where('id', $validated['destination_bed_id'])->lockForUpdate()->firstOrFail();
+
+            if ($destBed->status !== 'available') {
+                DB::rollBack();
+
+                return back()->withErrors(['destination_bed_id' => "Destination bed {$destBed->bed_number} is not available (status: {$destBed->status})."]);
+            }
+
+            // Release old bed to cleaning
+            $currentBed->update(['status' => 'cleaning']);
+
+            // Occupy new bed
+            $destBed->update(['status' => 'occupied']);
+
+            $oldBedNumber = $currentBed->bed_number;
+            $lockedAdmission->bed_id = $destBed->id;
+            if (! empty($validated['transfer_reason'])) {
+                $lockedAdmission->admission_reason .= "\n[Bed Transfer ".now()->format('Y-m-d H:i')."]: From Bed {$oldBedNumber} to Bed {$destBed->bed_number}. Reason: {$validated['transfer_reason']}";
+            }
+            $lockedAdmission->save();
+
+            DB::commit();
+
+            AuditLog::log('TRANSFER', 'IPD', "Transferred patient #{$lockedAdmission->patient_id} from Bed {$oldBedNumber} to Bed {$destBed->bed_number} (Admission {$lockedAdmission->admission_number})", (string) $lockedAdmission->id);
+
+            return back()->with('success', "Patient transferred successfully from Bed {$oldBedNumber} to Bed {$destBed->bed_number}.");
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return back()->withErrors(['error' => 'Bed transfer failed: '.$e->getMessage()]);
+        }
     }
 
     public function discharge(Request $request, Admission $admission): RedirectResponse

@@ -85,4 +85,84 @@
         </form>
     </div>
 </div>
+
+<!-- Multi-Batch / Lot Management Card -->
+<div class="card border-0 shadow-sm mt-4" style="max-width: 860px; margin: 0 auto;">
+    <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between">
+        <h6 class="mb-0 fw-bold"><i class="bi bi-boxes text-info me-2"></i>Multi-Batch & Lot Expiry Inventory (FEFO)</h6>
+        <span class="badge bg-light text-dark border">{{ $medicine->batches->count() }} Recorded Batch(es)</span>
+    </div>
+    <div class="card-body p-4">
+        @if($medicine->batches->isNotEmpty())
+            <div class="table-responsive mb-4">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Batch / Lot #</th>
+                            <th>Expiry Date</th>
+                            <th>Units in Stock</th>
+                            <th>Unit Cost</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($medicine->batches as $batch)
+                            <tr>
+                                <td class="fw-bold">{{ $batch->batch_number }}</td>
+                                <td>
+                                    {{ $batch->expiry_date?->format('M d, Y') ?? 'N/A' }}
+                                    @if($batch->isExpired())
+                                        <span class="badge bg-danger ms-1">Expired</span>
+                                    @endif
+                                </td>
+                                <td><span class="badge bg-light text-dark border">{{ $batch->quantity }} units</span></td>
+                                <td>{{ \App\Models\Setting::get('currency_symbol', '$') }}{{ number_format($batch->purchase_cost ?? 0, 2) }}</td>
+                                <td>
+                                    <span class="badge bg-{{ $batch->status === 'active' ? 'success' : ($batch->status === 'expired' ? 'danger' : 'secondary') }} text-capitalize">
+                                        {{ $batch->status }}
+                                    </span>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @else
+            <div class="alert alert-light border small text-muted mb-4">
+                No distinct lots recorded yet. Received shipments will be tracked with individual expiry dates.
+            </div>
+        @endif
+
+        <!-- Receive New Batch Form -->
+        <div class="p-3 bg-light rounded border">
+            <h6 class="fw-bold text-dark small mb-3"><i class="bi bi-plus-circle me-1 text-primary"></i>Receive New Shipment / Lot</h6>
+            <form action="{{ route('pharmacy.batches.store', $medicine) }}" method="POST">
+                @csrf
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold">Batch / Lot # *</label>
+                        <input type="text" name="batch_number" class="form-control form-control-sm" placeholder="e.g. LOT-2026-A" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold">Expiry Date *</label>
+                        <input type="date" name="expiry_date" class="form-control form-control-sm" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-semibold">Quantity *</label>
+                        <input type="number" name="quantity" class="form-control form-control-sm" min="1" placeholder="Units" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-semibold">Unit Cost</label>
+                        <input type="number" step="0.01" name="purchase_cost" class="form-control form-control-sm" placeholder="{{ $medicine->purchase_cost }}">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-sm btn-primary w-100 fw-bold">
+                            Add Batch
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 @endsection

@@ -9,6 +9,9 @@
         <i class="bi bi-arrow-left me-1"></i> Back to Lab Queue
     </a>
     <div class="d-flex align-items-center gap-2">
+        <a href="{{ route('laboratory.requests.print', $request) }}" target="_blank" class="btn btn-sm btn-outline-primary d-flex align-items-center gap-1">
+            <i class="bi bi-printer"></i> Print Official Report
+        </a>
         <span class="badge bg-{{ $request->priority === 'stat' ? 'danger' : 'info' }} text-uppercase fs-6">
             {{ $request->priority }}
         </span>

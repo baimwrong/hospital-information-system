@@ -8,7 +8,12 @@
     <a href="{{ route('encounters.index') }}" class="btn btn-sm btn-outline-secondary">
         <i class="bi bi-arrow-left me-1"></i> Back to Encounters
     </a>
-    <div>
+    <div class="d-flex align-items-center gap-2">
+        @if($encounter->prescription)
+            <a href="{{ route('pharmacy.prescriptions.print', $encounter->prescription) }}" target="_blank" class="btn btn-sm btn-outline-success">
+                <i class="bi bi-printer me-1"></i> Print Rx
+            </a>
+        @endif
         <a href="{{ route('patients.show', $encounter->patient) }}" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-person me-1"></i> Open Patient EHR
         </a>
@@ -87,6 +92,68 @@
                 {{ $encounter->treatment_plan ?? 'Routine management.' }}
             </div>
         </div>
+
+        @if($encounter->prescription)
+            <div class="mb-4">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <h6 class="fw-bold text-primary text-uppercase small mb-0"><i class="bi bi-capsule me-1"></i> Prescribed Medications (Rx #{{ $encounter->prescription->prescription_number }})</h6>
+                    <a href="{{ route('pharmacy.prescriptions.print', $encounter->prescription) }}" target="_blank" class="btn btn-sm btn-outline-success">
+                        <i class="bi bi-printer me-1"></i> Print Rx
+                    </a>
+                </div>
+                <div class="table-responsive border rounded bg-white">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Medicine</th>
+                                <th>Dosage</th>
+                                <th>Frequency</th>
+                                <th>Duration</th>
+                                <th>Instructions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($encounter->prescription->items as $item)
+                                <tr>
+                                    <td class="fw-semibold">{{ $item->medicine->name ?? 'Medication' }}</td>
+                                    <td>{{ $item->dosage }}</td>
+                                    <td>{{ $item->frequency }}</td>
+                                    <td>{{ $item->duration }}</td>
+                                    <td class="small text-muted">{{ $item->instructions ?? '-' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        @endif
+
+        @if($encounter->labRequests && $encounter->labRequests->isNotEmpty())
+            <div class="mb-4">
+                <h6 class="fw-bold text-primary text-uppercase small mb-2"><i class="bi bi-clipboard2-pulse me-1"></i> Ordered Laboratory Tests</h6>
+                <div class="list-group">
+                    @foreach($encounter->labRequests as $req)
+                        <div class="list-group-item d-flex align-items-center justify-content-between">
+                            <div>
+                                <span class="fw-semibold">{{ $req->request_number }}</span>
+                                <span class="badge bg-{{ $req->status === 'completed' ? 'success' : 'secondary' }} ms-2 text-capitalize">{{ str_replace('_', ' ', $req->status) }}</span>
+                                <div class="small text-muted">{{ $req->results->pluck('parameter_name')->implode(', ') }}</div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <a href="{{ route('laboratory.show', $req) }}" class="btn btn-sm btn-outline-primary">
+                                    View Results
+                                </a>
+                                @if($req->status === 'completed')
+                                    <a href="{{ route('laboratory.requests.print', $req) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                                        <i class="bi bi-printer me-1"></i> Print Report
+                                    </a>
+                                @endif
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
 
         @if($encounter->follow_up_date)
             <div class="p-3 bg-primary bg-opacity-10 border border-primary-subtle rounded d-flex align-items-center gap-2">

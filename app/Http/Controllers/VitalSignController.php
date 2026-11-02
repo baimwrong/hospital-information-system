@@ -67,6 +67,16 @@ class VitalSignController extends Controller
         $validated['recorded_at'] = now();
         $validated['bmi'] = PatientVital::computeBMI($validated['weight'] ?? null, $validated['height'] ?? null);
 
+        $news2 = PatientVital::computeNEWS2(
+            isset($validated['respiratory_rate']) ? (int) $validated['respiratory_rate'] : null,
+            isset($validated['oxygen_saturation']) ? (int) $validated['oxygen_saturation'] : null,
+            isset($validated['blood_pressure_systolic']) ? (int) $validated['blood_pressure_systolic'] : null,
+            isset($validated['heart_rate']) ? (int) $validated['heart_rate'] : null,
+            isset($validated['temperature']) ? (float) $validated['temperature'] : null
+        );
+        $validated['news2_score'] = $news2['score'];
+        $validated['news2_risk_level'] = $news2['risk_level'];
+
         $vital = PatientVital::create($validated);
 
         // If associated with appointment, update status to checked_in if scheduled
@@ -77,7 +87,7 @@ class VitalSignController extends Controller
             }
         }
 
-        AuditLog::log('CREATE', 'Triage', "Recorded vital signs for patient #{$vital->patient_id} (Triage: {$vital->triage_level})", (string) $vital->id);
+        AuditLog::log('CREATE', 'Triage', "Recorded vital signs for patient #{$vital->patient_id} (Triage: {$vital->triage_level}, NEWS2: {$vital->news2_score})", (string) $vital->id);
 
         return redirect()->route('patients.show', $vital->patient_id)
             ->with('success', 'Patient vital signs recorded and triage classification assigned.');

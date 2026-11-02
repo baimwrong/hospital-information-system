@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SequenceGenerator;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -59,17 +60,13 @@ class Medicine extends Model
         return $this->expiry_date && $this->expiry_date->isPast();
     }
 
+    public function batches(): HasMany
+    {
+        return $this->hasMany(MedicineBatch::class)->orderBy('expiry_date', 'asc');
+    }
+
     public static function generateCode(): string
     {
-        $last = static::where('code', 'like', 'MED-%')
-            ->orderByRaw('LENGTH(code) DESC, code DESC')
-            ->value('code');
-
-        $nextSeq = 1;
-        if ($last && preg_match('/MED-(\d+)/', $last, $matches)) {
-            $nextSeq = ((int) $matches[1]) + 1;
-        }
-
-        return sprintf('MED-%04d', $nextSeq);
+        return SequenceGenerator::generate('MED', 'medicines', 'code', 4, false);
     }
 }

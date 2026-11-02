@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SequenceGenerator;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -45,23 +46,10 @@ class Payment extends Model
     }
 
     /**
-     * Generate sequential Payment receipt number atomically.
+     * Generate sequential Payment receipt number atomically and collision-free.
      */
     public static function generateNumber(): string
     {
-        $year = date('Y');
-        $prefix = "PAY-{$year}-";
-
-        $last = static::withTrashed()
-            ->where('payment_number', 'like', "{$prefix}%")
-            ->orderByRaw('LENGTH(payment_number) DESC, payment_number DESC')
-            ->value('payment_number');
-
-        $nextSeq = 1;
-        if ($last && preg_match('/PAY-\d{4}-(\d+)/', $last, $matches)) {
-            $nextSeq = ((int) $matches[1]) + 1;
-        }
-
-        return sprintf('PAY-%s-%04d', $year, $nextSeq);
+        return SequenceGenerator::generate('PAY', 'payments', 'payment_number', 4, true);
     }
 }

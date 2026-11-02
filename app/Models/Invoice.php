@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SequenceGenerator;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -94,19 +95,6 @@ class Invoice extends Model
 
     public static function generateNumber(): string
     {
-        $year = date('Y');
-        $prefix = "INV-{$year}-";
-
-        $last = static::withTrashed()
-            ->where('invoice_number', 'like', "{$prefix}%")
-            ->orderByRaw('LENGTH(invoice_number) DESC, invoice_number DESC')
-            ->value('invoice_number');
-
-        $nextSeq = 1;
-        if ($last && preg_match('/INV-\d{4}-(\d+)/', $last, $matches)) {
-            $nextSeq = ((int) $matches[1]) + 1;
-        }
-
-        return sprintf('INV-%s-%04d', $year, $nextSeq);
+        return SequenceGenerator::generate('INV', 'invoices', 'invoice_number', 4, true);
     }
 }

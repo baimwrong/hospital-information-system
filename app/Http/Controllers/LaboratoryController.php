@@ -10,6 +10,7 @@ use App\Models\LabRequest;
 use App\Models\LabTestResult;
 use App\Models\LabTestType;
 use App\Models\Patient;
+use App\Models\Setting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -234,5 +235,18 @@ class LaboratoryController extends Controller
         AuditLog::log('CREATE', 'LIS', "Added new test to catalog: {$tt->name} ({$tt->test_code})", (string) $tt->id);
 
         return back()->with('success', "Test {$tt->name} added to catalog.");
+    }
+
+    public function print(LabRequest $request): View
+    {
+        $request->load(['patient.vitals', 'doctor.user', 'doctor.department', 'technician', 'results.labTestType']);
+        $hospitalName = Setting::get('hospital_name', 'Hospital Information System');
+        $hospitalAddress = Setting::get('hospital_address', '124 Healthcare Boulevard, Medical District');
+        $hospitalPhone = Setting::get('hospital_phone', '+1 (555) 019-4820');
+        $hospitalEmail = Setting::get('hospital_email', 'laboratory@hospital.local');
+
+        AuditLog::log('VIEW', 'LIS', "Printed official laboratory test report {$request->request_number}", (string) $request->id);
+
+        return view('laboratory.print', compact('request', 'hospitalName', 'hospitalAddress', 'hospitalPhone', 'hospitalEmail'));
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SequenceGenerator;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -62,19 +63,6 @@ class Prescription extends Model
 
     public static function generateNumber(): string
     {
-        $year = date('Y');
-        $prefix = "RX-{$year}-";
-
-        $last = static::withTrashed()
-            ->where('prescription_number', 'like', "{$prefix}%")
-            ->orderByRaw('LENGTH(prescription_number) DESC, prescription_number DESC')
-            ->value('prescription_number');
-
-        $nextSeq = 1;
-        if ($last && preg_match('/RX-\d{4}-(\d+)/', $last, $matches)) {
-            $nextSeq = ((int) $matches[1]) + 1;
-        }
-
-        return sprintf('RX-%s-%04d', $year, $nextSeq);
+        return SequenceGenerator::generate('RX', 'prescriptions', 'prescription_number', 4, true);
     }
 }

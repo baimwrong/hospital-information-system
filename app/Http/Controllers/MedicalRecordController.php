@@ -162,6 +162,9 @@ class MedicalRecordController extends Controller
                 }
             }
 
+            $totalLabCost = 0.00;
+            $labInvoiceItems = [];
+
             // Create Lab Request if tests specified
             if (! empty($request->input('lab_test_type_ids'))) {
                 $testIds = array_filter($request->input('lab_test_type_ids'));
@@ -175,9 +178,6 @@ class MedicalRecordController extends Controller
                         'priority' => 'routine',
                         'status' => 'pending',
                     ]);
-
-                    $totalLabCost = 0.00;
-                    $labInvoiceItems = [];
 
                     foreach ($testIds as $testTypeId) {
                         $testType = LabTestType::find($testTypeId);
@@ -202,55 +202,49 @@ class MedicalRecordController extends Controller
                             ];
                         }
                     }
-
-                    // Generate invoice for ordered lab tests
-                    if ($totalLabCost > 0) {
-                        $labInvoice = Invoice::create([
-                            'invoice_number' => Invoice::generateNumber(),
-                            'patient_id' => $encounter->patient_id,
-                            'total_amount' => $totalLabCost,
-                            'paid_amount' => 0.00,
-                            'balance_due' => $totalLabCost,
-                            'payment_status' => 'unpaid',
-                            'invoice_date' => now()->toDateString(),
-                            'due_date' => now()->addDays(5)->toDateString(),
-                            'generated_by_id' => Auth::id(),
-                            'notes' => 'Laboratory investigation fee for order '.$labRequest->request_number,
-                        ]);
-
-                        foreach ($labInvoiceItems as $item) {
-                            $item['invoice_id'] = $labInvoice->id;
-                            InvoiceItem::create($item);
-                        }
-                    }
                 }
             }
 
-            // Create consultation invoice
+            // Consolidate consultation fee and ordered lab investigations into a single unified patient encounter invoice
             $doctor = Doctor::find($encounter->doctor_id);
-            if ($doctor && $doctor->consultation_fee > 0) {
+            $hasConsultationFee = $doctor && $doctor->consultation_fee > 0;
+            $hasLabItems = ! empty($labInvoiceItems);
+
+            if ($hasConsultationFee || $hasLabItems) {
+                $consultationFee = $hasConsultationFee ? (float) $doctor->consultation_fee : 0.00;
+                $totalEncounterBilled = $consultationFee + $totalLabCost;
+
                 $invoice = Invoice::create([
                     'invoice_number' => Invoice::generateNumber(),
                     'patient_id' => $encounter->patient_id,
                     'appointment_id' => $encounter->appointment_id,
-                    'total_amount' => $doctor->consultation_fee,
+                    'total_amount' => $totalEncounterBilled,
                     'paid_amount' => 0.00,
-                    'balance_due' => $doctor->consultation_fee,
+                    'balance_due' => $totalEncounterBilled,
                     'payment_status' => 'unpaid',
                     'invoice_date' => now()->toDateString(),
                     'due_date' => now()->addDays(7)->toDateString(),
                     'generated_by_id' => Auth::id(),
-                    'notes' => 'Consultation fee for '.$doctor->specialization,
+                    'notes' => "Clinical encounter billing ({$encounter->encounter_number})",
                 ]);
 
-                InvoiceItem::create([
-                    'invoice_id' => $invoice->id,
-                    'item_type' => 'consultation',
-                    'description' => "Doctor Consultation ({$doctor->specialization})",
-                    'quantity' => 1,
-                    'unit_price' => $doctor->consultation_fee,
-                    'subtotal' => $doctor->consultation_fee,
-                ]);
+                if ($hasConsultationFee) {
+                    InvoiceItem::create([
+                        'invoice_id' => $invoice->id,
+                        'item_type' => 'consultation',
+                        'description' => "Doctor Consultation ({$doctor->specialization} - Dr. {$doctor->user->name})",
+                        'quantity' => 1,
+                        'unit_price' => $consultationFee,
+                        'subtotal' => $consultationFee,
+                    ]);
+                }
+
+                if ($hasLabItems) {
+                    foreach ($labInvoiceItems as $item) {
+                        $item['invoice_id'] = $invoice->id;
+                        InvoiceItem::create($item);
+                    }
+                }
             }
 
             DB::commit();
@@ -268,6 +262,8 @@ class MedicalRecordController extends Controller
 
     public function show(MedicalRecord $encounter): View
     {
+        AuditLog::log('VIEW', 'Encounters', "Viewed clinical encounter chart {$encounter->encounter_number} for patient #{$encounter->patient_id}", (string) $encounter->id);
+
         $encounter->load([
             'patient.vitals',
             'doctor.user',
@@ -275,6 +271,7 @@ class MedicalRecordController extends Controller
             'appointment',
             'prescription.items.medicine',
             'labRequests.results.labTestType',
+            'documents',
         ]);
 
         return view('encounters.show', compact('encounter'));

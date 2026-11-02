@@ -8,6 +8,7 @@ use App\Models\Department;
 use App\Models\Doctor;
 use App\Models\LabTestType;
 use App\Models\Medicine;
+use App\Models\MedicineBatch;
 use App\Models\Patient;
 use App\Models\User;
 use Carbon\Carbon;
@@ -222,6 +223,7 @@ class BulkImportService
             'role' => 'doctor',
             'phone' => $data['phone'] ?? null,
             'is_active' => true,
+            'must_change_password' => empty($data['password']),
         ]);
 
         Doctor::create([
@@ -260,7 +262,7 @@ class BulkImportService
 
         $code = ! empty($data['code']) ? trim($data['code']) : Medicine::generateCode();
 
-        Medicine::create([
+        $med = Medicine::create([
             'code' => $code,
             'brand_name' => trim($data['brand_name']),
             'generic_name' => trim($data['generic_name']),
@@ -277,6 +279,17 @@ class BulkImportService
             'storage_condition' => $data['storage_condition'] ?? 'Store below 25°C',
             'status' => (int) $data['stock_quantity'] > 0 ? 'in_stock' : 'out_of_stock',
         ]);
+
+        if ($med->stock_quantity > 0) {
+            MedicineBatch::create([
+                'medicine_id' => $med->id,
+                'batch_number' => $med->batch_number,
+                'expiry_date' => $med->expiry_date,
+                'quantity' => $med->stock_quantity,
+                'purchase_cost' => $med->purchase_cost,
+                'status' => 'active',
+            ]);
+        }
     }
 
     /**

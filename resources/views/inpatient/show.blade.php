@@ -9,6 +9,11 @@
         <i class="bi bi-arrow-left me-1"></i> Back to Admissions
     </a>
     <div>
+        @if($admission->status === 'admitted')
+            <button type="button" class="btn btn-sm btn-outline-info me-2" data-bs-toggle="modal" data-bs-target="#transferBedModal">
+                <i class="bi bi-arrow-left-right me-1"></i> Transfer Bed / Ward
+            </button>
+        @endif
         <a href="{{ route('patients.show', $admission->patient) }}" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-person me-1"></i> Open Patient EHR
         </a>
@@ -119,4 +124,48 @@
         </div>
     </div>
 </div>
+
+@if($admission->status === 'admitted')
+<!-- Modal: Transfer Bed -->
+<div class="modal fade" id="transferBedModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form action="{{ route('inpatient.admissions.transfer', $admission) }}" method="POST">
+            @csrf
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">Transfer Inpatient Bed</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border small mb-3">
+                        Currently in <strong>{{ $admission->bed->ward->name }}</strong> - Bed <strong>{{ $admission->bed->bed_number }}</strong>.
+                        Transferring will mark the old bed as <em>cleaning</em> and assign the patient to the selected new bed.
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Destination Ward & Bed *</label>
+                        <select name="destination_bed_id" class="form-select" required>
+                            <option value="">-- Choose available destination bed --</option>
+                            @foreach($availableBeds ?? [] as $b)
+                                <option value="{{ $b->id }}">
+                                    {{ $b->ward->name }} - Bed {{ $b->bed_number }} ({{ ucfirst($b->bed_type) }} &bull; {{ \App\Models\Setting::get('currency_symbol', '$') }}{{ number_format($b->effective_rate, 2) }}/day)
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Clinical Reason for Transfer</label>
+                        <input type="text" name="transfer_reason" class="form-control" placeholder="e.g. Upgraded to ICU due to clinical deterioration / Step down to General Ward">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-info btn-sm fw-bold">Confirm Bed Transfer</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+@endif
 @endsection

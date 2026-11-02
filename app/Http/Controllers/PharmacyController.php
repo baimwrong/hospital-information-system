@@ -6,7 +6,10 @@ use App\Models\AuditLog;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Medicine;
+use App\Models\MedicineBatch;
 use App\Models\Prescription;
+use App\Models\Setting;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -82,6 +85,17 @@ class PharmacyController extends Controller
 
         $med = Medicine::create($validated);
 
+        if ($med->stock_quantity > 0 && ! empty($validated['batch_number'])) {
+            MedicineBatch::create([
+                'medicine_id' => $med->id,
+                'batch_number' => $validated['batch_number'],
+                'expiry_date' => $validated['expiry_date'] ?? now()->addYears(2)->toDateString(),
+                'quantity' => $med->stock_quantity,
+                'purchase_cost' => $validated['purchase_cost'],
+                'status' => 'active',
+            ]);
+        }
+
         AuditLog::log('CREATE', 'Pharmacy', "Added medicine {$med->brand_name} ({$med->code}) to inventory", (string) $med->id);
 
         return redirect()->route('pharmacy.index')
@@ -90,6 +104,8 @@ class PharmacyController extends Controller
 
     public function edit(Medicine $medicine): View
     {
+        $medicine->load('batches');
+
         return view('pharmacy.edit', compact('medicine'));
     }
 
@@ -117,6 +133,53 @@ class PharmacyController extends Controller
         AuditLog::log('UPDATE', 'Pharmacy', "Updated medicine item {$medicine->brand_name} stock: {$medicine->stock_quantity}", (string) $medicine->id);
 
         return redirect()->route('pharmacy.index')->with('success', 'Medicine inventory record updated.');
+    }
+
+    public function storeBatch(Request $request, Medicine $medicine): RedirectResponse
+    {
+        $validated = $request->validate([
+            'batch_number' => 'required|string|max:50',
+            'expiry_date' => 'required|date|after:today',
+            'quantity' => 'required|integer|min:1',
+            'purchase_cost' => 'nullable|numeric|min:0',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            $batch = MedicineBatch::create([
+                'medicine_id' => $medicine->id,
+                'batch_number' => $validated['batch_number'],
+                'expiry_date' => $validated['expiry_date'],
+                'quantity' => $validated['quantity'],
+                'purchase_cost' => $validated['purchase_cost'] ?? $medicine->purchase_cost,
+                'status' => 'active',
+            ]);
+
+            $medicine->increment('stock_quantity', $validated['quantity']);
+            $medicine->refresh();
+            if ($medicine->status === 'out_of_stock' && $medicine->stock_quantity > 0) {
+                $medicine->update(['status' => 'in_stock']);
+            }
+
+            // If new batch expires earlier or medicine has no expiry date, update primary expiry
+            if (! $medicine->expiry_date || Carbon::parse($validated['expiry_date'])->lt($medicine->expiry_date)) {
+                $medicine->update([
+                    'batch_number' => $validated['batch_number'],
+                    'expiry_date' => $validated['expiry_date'],
+                ]);
+            }
+
+            DB::commit();
+
+            AuditLog::log('CREATE', 'Pharmacy', "Added new batch {$batch->batch_number} (+{$batch->quantity} units) to {$medicine->brand_name}", (string) $medicine->id);
+
+            return back()->with('success', "Batch {$batch->batch_number} (+{$batch->quantity} units) added to {$medicine->brand_name}.");
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return back()->withErrors(['error' => 'Failed to add batch: '.$e->getMessage()]);
+        }
     }
 
     public function prescriptions(Request $request): View
@@ -177,6 +240,28 @@ class PharmacyController extends Controller
 
                 if ($med->stock_quantity < $item->quantity_prescribed) {
                     throw new \Exception("Insufficient stock for {$med->brand_name}. Current available stock: {$med->stock_quantity}. Required: {$item->quantity_prescribed}.");
+                }
+
+                // Deduct from batches using FEFO (First Expired, First Out)
+                $batches = $med->batches()
+                    ->where('quantity', '>', 0)
+                    ->where('status', 'active')
+                    ->orderBy('expiry_date', 'asc')
+                    ->lockForUpdate()
+                    ->get();
+
+                $toDeduct = $item->quantity_prescribed;
+                foreach ($batches as $batch) {
+                    if ($toDeduct <= 0) {
+                        break;
+                    }
+                    $deductQty = min($batch->quantity, $toDeduct);
+                    $batch->decrement('quantity', $deductQty);
+                    $batch->refresh();
+                    if ($batch->quantity <= 0) {
+                        $batch->update(['status' => 'depleted']);
+                    }
+                    $toDeduct -= $deductQty;
                 }
 
                 $med->decrement('stock_quantity', $item->quantity_prescribed);
@@ -243,5 +328,18 @@ class PharmacyController extends Controller
 
             return back()->withErrors(['error' => 'Dispense failed: '.$e->getMessage()]);
         }
+    }
+
+    public function print(Prescription $prescription): View
+    {
+        $prescription->load(['patient', 'doctor.user', 'doctor.department', 'items.medicine', 'medicalRecord', 'dispensedBy']);
+        $hospitalName = Setting::get('hospital_name', 'Hospital Information System');
+        $hospitalAddress = Setting::get('hospital_address', '124 Healthcare Boulevard, Medical District');
+        $hospitalPhone = Setting::get('hospital_phone', '+1 (555) 019-4820');
+        $hospitalEmail = Setting::get('hospital_email', 'pharmacy@hospital.local');
+
+        AuditLog::log('VIEW', 'Pharmacy', "Printed prescription slip {$prescription->prescription_number}", (string) $prescription->id);
+
+        return view('pharmacy.print', compact('prescription', 'hospitalName', 'hospitalAddress', 'hospitalPhone', 'hospitalEmail'));
     }
 }

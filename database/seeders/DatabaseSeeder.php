@@ -15,6 +15,7 @@ use App\Models\LabTestResult;
 use App\Models\LabTestType;
 use App\Models\MedicalRecord;
 use App\Models\Medicine;
+use App\Models\MedicineBatch;
 use App\Models\Patient;
 use App\Models\PatientVital;
 use App\Models\Prescription;
@@ -434,7 +435,16 @@ class DatabaseSeeder extends Seeder
 
         $medicineModels = [];
         foreach ($meds as $m) {
-            $medicineModels[] = Medicine::create($m);
+            $medModel = Medicine::create($m);
+            $medicineModels[] = $medModel;
+            MedicineBatch::create([
+                'medicine_id' => $medModel->id,
+                'batch_number' => $medModel->batch_number ?? 'BAT-'.date('Ymd'),
+                'expiry_date' => $medModel->expiry_date ?? Carbon::now()->addMonths(24)->toDateString(),
+                'quantity' => $medModel->stock_quantity,
+                'purchase_cost' => $medModel->purchase_cost,
+                'status' => 'active',
+            ]);
         }
 
         // 7. Laboratory Test Catalog

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SequenceGenerator;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -93,24 +94,16 @@ class Patient extends Model
         return $this->hasMany(Payment::class)->latest();
     }
 
+    public function documents(): HasMany
+    {
+        return $this->hasMany(MedicalDocument::class)->latest();
+    }
+
     /**
      * Generate next sequential Medical Record Number atomically and collision-free.
      */
     public static function generateMRN(): string
     {
-        $year = date('Y');
-        $prefix = "MRN-{$year}-";
-
-        $last = static::withTrashed()
-            ->where('mrn', 'like', "{$prefix}%")
-            ->orderByRaw('LENGTH(mrn) DESC, mrn DESC')
-            ->value('mrn');
-
-        $nextSeq = 1;
-        if ($last && preg_match('/MRN-\d{4}-(\d+)/', $last, $matches)) {
-            $nextSeq = ((int) $matches[1]) + 1;
-        }
-
-        return sprintf('MRN-%s-%04d', $year, $nextSeq);
+        return SequenceGenerator::generate('MRN', 'patients', 'mrn', 4, true);
     }
 }

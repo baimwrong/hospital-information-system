@@ -13,6 +13,7 @@ use App\Http\Controllers\MedicalRecordController;
 use App\Http\Controllers\PatientController;
 use App\Http\Controllers\PharmacyController;
 use App\Http\Controllers\SettingController;
+use App\Http\Controllers\UserController;
 use App\Http\Controllers\VitalSignController;
 use Illuminate\Support\Facades\Route;
 
@@ -31,6 +32,11 @@ Route::middleware('auth')->group(function () {
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+    // Staff Profile & Password Self-Service
+    Route::get('/profile', [AuthController::class, 'profile'])->name('profile');
+    Route::put('/profile', [AuthController::class, 'updateProfile'])->name('profile.update');
+    Route::put('/profile/password', [AuthController::class, 'updatePassword'])->name('profile.password');
+
     // Patients EMR
     Route::get('/patients/search/quick', [PatientController::class, 'quickSearch'])
         ->middleware('role:admin,receptionist,nurse,doctor,accountant,laboratorist')
@@ -41,6 +47,15 @@ Route::middleware('auth')->group(function () {
     Route::resource('patients', PatientController::class)
         ->middleware('role:admin,receptionist,nurse,doctor')
         ->except(['destroy']);
+    Route::post('/patients/{patient}/documents', [PatientController::class, 'uploadDocument'])
+        ->middleware('role:admin,doctor,nurse,laboratorist')
+        ->name('patients.documents.upload');
+    Route::get('/patients/{patient}/documents/{document}', [PatientController::class, 'downloadDocument'])
+        ->middleware('role:admin,doctor,nurse,laboratorist,receptionist')
+        ->name('patients.documents.download');
+    Route::delete('/patients/{patient}/documents/{document}', [PatientController::class, 'destroyDocument'])
+        ->middleware('role:admin,doctor')
+        ->name('patients.documents.destroy');
 
     // Physicians Directory
     Route::get('/doctors', [DoctorController::class, 'index'])->name('doctors.index');
@@ -89,6 +104,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/wards', [InpatientController::class, 'storeWard'])
             ->middleware('role:admin')
             ->name('wards.store');
+        Route::post('/beds/{bed}/status', [InpatientController::class, 'updateBedStatus'])
+            ->middleware('role:admin,doctor,nurse,receptionist')
+            ->name('beds.status');
         Route::get('/admissions/create', [InpatientController::class, 'createAdmission'])
             ->middleware('role:admin,doctor,nurse,receptionist')
             ->name('admissions.create');
@@ -98,6 +116,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/admissions/{admission}', [InpatientController::class, 'show'])
             ->middleware('role:admin,doctor,nurse,receptionist')
             ->name('show');
+        Route::post('/admissions/{admission}/transfer', [InpatientController::class, 'transferBed'])
+            ->middleware('role:admin,doctor,nurse')
+            ->name('admissions.transfer');
         Route::post('/admissions/{admission}/discharge', [InpatientController::class, 'discharge'])
             ->middleware('role:admin,doctor,nurse')
             ->name('discharge');
@@ -114,12 +135,16 @@ Route::middleware('auth')->group(function () {
         Route::post('/prescriptions/{prescription}/dispense', [PharmacyController::class, 'dispense'])
             ->middleware('role:admin,pharmacist')
             ->name('prescriptions.dispense');
+        Route::get('/prescriptions/{prescription}/print', [PharmacyController::class, 'print'])
+            ->middleware('role:admin,pharmacist,doctor,nurse')
+            ->name('prescriptions.print');
 
         Route::middleware('role:admin,pharmacist')->group(function () {
             Route::get('/create', [PharmacyController::class, 'create'])->name('create');
             Route::post('/', [PharmacyController::class, 'store'])->name('store');
             Route::get('/{medicine}/edit', [PharmacyController::class, 'edit'])->name('edit');
             Route::put('/{medicine}', [PharmacyController::class, 'update'])->name('update');
+            Route::post('/{medicine}/batches', [PharmacyController::class, 'storeBatch'])->name('batches.store');
         });
     });
 
@@ -137,6 +162,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/requests/{request}', [LaboratoryController::class, 'show'])
             ->middleware('role:admin,laboratorist,doctor,nurse')
             ->name('show');
+        Route::get('/requests/{request}/print', [LaboratoryController::class, 'print'])
+            ->middleware('role:admin,laboratorist,doctor,nurse')
+            ->name('requests.print');
         Route::post('/requests/{labRequest}/status', [LaboratoryController::class, 'updateStatus'])
             ->middleware('role:admin,laboratorist')
             ->name('requests.update-status');
@@ -175,6 +203,11 @@ Route::middleware('auth')->group(function () {
 
     // Admin-Only Modules (Role Guarded)
     Route::middleware('role:admin')->prefix('admin')->name('admin.')->group(function () {
+        // Staff & User Management
+        Route::resource('users', UserController::class)->except(['destroy', 'show']);
+        Route::post('/users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
+        Route::post('/users/{user}/reset-password', [UserController::class, 'resetPassword'])->name('users.reset-password');
+
         // Bulk Data Import
         Route::get('/bulk-import', [BulkImportController::class, 'index'])->name('bulk-import.index');
         Route::post('/bulk-import', [BulkImportController::class, 'import'])->name('bulk-import.import');

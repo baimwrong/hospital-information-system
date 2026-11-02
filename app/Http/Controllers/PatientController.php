@@ -3,11 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\MedicalDocument;
 use App\Models\Patient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class PatientController extends Controller
 {
@@ -95,6 +99,8 @@ class PatientController extends Controller
 
     public function show(Patient $patient): View
     {
+        AuditLog::log('VIEW', 'Patients', "Accessed patient medical record: {$patient->full_name} ({$patient->mrn})", (string) $patient->id);
+
         $patient->load([
             'vitals.recordedBy',
             'appointments.doctor.user',
@@ -103,9 +109,74 @@ class PatientController extends Controller
             'labRequests.results',
             'admissions.bed.ward',
             'invoices.items',
+            'documents.uploadedBy',
         ]);
 
         return view('patients.show', compact('patient'));
+    }
+
+    public function uploadDocument(Request $request, Patient $patient): RedirectResponse
+    {
+        $validated = $request->validate([
+            'title' => 'required|string|max:150',
+            'document_type' => 'required|in:referral_letter,lab_report,imaging_scan,pathology,discharge_summary,general',
+            'medical_record_id' => 'nullable|exists:medical_records,id',
+            'notes' => 'nullable|string',
+            'file' => 'required|file|max:20480|mimes:pdf,jpg,jpeg,png,webp,txt,doc,docx',
+        ]);
+
+        $file = $request->file('file');
+        $fileName = $file->getClientOriginalName();
+        $storedPath = $file->store("medical_documents/{$patient->id}", 'local');
+
+        $doc = MedicalDocument::create([
+            'patient_id' => $patient->id,
+            'medical_record_id' => $validated['medical_record_id'] ?? null,
+            'title' => $validated['title'],
+            'document_type' => $validated['document_type'],
+            'file_path' => $storedPath,
+            'file_name' => $fileName,
+            'file_size' => $file->getSize(),
+            'mime_type' => $file->getClientMimeType() ?: 'application/octet-stream',
+            'uploaded_by_id' => Auth::id(),
+            'notes' => $validated['notes'] ?? null,
+        ]);
+
+        AuditLog::log('CREATE', 'Documents', "Uploaded document '{$doc->title}' ({$doc->document_type}) for patient {$patient->mrn}", (string) $doc->id);
+
+        return back()->with('success', "Medical document '{$doc->title}' attached successfully to patient record.");
+    }
+
+    public function downloadDocument(Patient $patient, MedicalDocument $document): BinaryFileResponse|RedirectResponse
+    {
+        if ($document->patient_id !== $patient->id) {
+            abort(404, 'Document does not belong to this patient.');
+        }
+
+        if (! Storage::disk('local')->exists($document->file_path)) {
+            return back()->withErrors(['error' => 'File not found on storage disk.']);
+        }
+
+        AuditLog::log('VIEW', 'Documents', "Downloaded document '{$document->title}' for patient {$patient->mrn}", (string) $document->id);
+
+        return response()->download(
+            Storage::disk('local')->path($document->file_path),
+            $document->file_name
+        );
+    }
+
+    public function destroyDocument(Patient $patient, MedicalDocument $document): RedirectResponse
+    {
+        if ($document->patient_id !== $patient->id) {
+            abort(404);
+        }
+
+        $title = $document->title;
+        $document->delete();
+
+        AuditLog::log('DELETE', 'Documents', "Archived medical document '{$title}' for patient {$patient->mrn}", (string) $document->id);
+
+        return back()->with('success', "Document '{$title}' removed.");
     }
 
     public function edit(Patient $patient): View
